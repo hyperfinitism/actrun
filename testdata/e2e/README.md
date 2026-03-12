@@ -7,6 +7,7 @@
 - `trigger-skipped`: branch/path filter mismatch で CLI が `state=skipped` を返す
 - `file-commands`: `GITHUB_ENV` / `GITHUB_OUTPUT` / `GITHUB_PATH` / `GITHUB_STEP_SUMMARY`
 - `artifact-actions-roundtrip`: `actions/upload-artifact` / `actions/download-artifact` の roundtrip
+- `cache-actions-roundtrip`: `actions/cache/save` / `actions/cache/restore` の roundtrip
 - `job-failure-blocked`: required step failure と downstream `blocked`
 - `unsupported-uses`: unsupported `uses:` を CLI error として reject
 - `unsupported-matrix`: unsupported `strategy.matrix` を CLI error として reject

@@ -25,6 +25,9 @@ case "$workflow_file" in
   compat-artifact-multi-job.yml)
     report_name="compat-artifact-report"
     ;;
+  compat-cache-roundtrip.yml)
+    report_name="compat-cache-report"
+    ;;
   *)
     echo "unsupported compat workflow: $workflow_file" >&2
     exit 1

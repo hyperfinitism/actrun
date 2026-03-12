@@ -419,6 +419,36 @@ test "lowering: builtin artifact actions receive with values as INPUT env" {
 }
 
 ///|
+test "lowering: builtin cache actions receive with values as INPUT env" {
+  let workflow = new_workflow("ci", [
+    new_job("test", [
+      new_uses_step("restore", "actions/cache/restore@v4", with_values={
+        "key": "bundle-v1",
+        "path": "cache-dir",
+      }),
+      new_uses_step("save", "actions/cache/save@v4", with_values={
+        "key": "bundle-v1",
+        "path": "cache-dir",
+      }),
+    ]),
+  ])
+
+  let result = lower_push_workflow(workflow)
+
+  inspect(result.errors, content="[]")
+  let restore_plan = expect_task_plan(result.plan, "test/restore")
+  inspect(restore_plan.action.unwrap().backend, content="builtin")
+  inspect(restore_plan.action.unwrap().kind, content="cache-restore")
+  inspect(restore_plan.env.get("INPUT_KEY").unwrap_or(""), content="bundle-v1")
+  inspect(restore_plan.env.get("INPUT_PATH").unwrap_or(""), content="cache-dir")
+
+  let save_plan = expect_task_plan(result.plan, "test/save")
+  inspect(save_plan.action.unwrap().kind, content="cache-save")
+  inspect(save_plan.env.get("INPUT_KEY").unwrap_or(""), content="bundle-v1")
+  inspect(save_plan.env.get("INPUT_PATH").unwrap_or(""), content="cache-dir")
+}
+
+///|
 test "lowering: local composite action expands inner steps" {
   let workspace = prepare_local_action_workspace("lower-local-action")
   test_ensure_dir(workspace + "/.github")

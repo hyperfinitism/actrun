@@ -190,6 +190,34 @@ pub fn resolve_action_ref(action : ActionRef) -> ActionResolutionResult {
         }),
         errors: [],
       }
+    GitHubRepo("actions", "cache", _, Some("restore")) =>
+      {
+        action: Some({
+          uses: action_ref_text(action),
+          action_ref: action,
+          kind: "cache-restore",
+          backend: "builtin",
+          action_path: None,
+          entrypoint: None,
+          image: None,
+          args: [],
+        }),
+        errors: [],
+      }
+    GitHubRepo("actions", "cache", _, Some("save")) =>
+      {
+        action: Some({
+          uses: action_ref_text(action),
+          action_ref: action,
+          kind: "cache-save",
+          backend: "builtin",
+          action_path: None,
+          entrypoint: None,
+          image: None,
+          args: [],
+        }),
+        errors: [],
+      }
     Registry(scheme, name, _) if scheme == "builtin" && name == "checkout" =>
       {
         action: Some({

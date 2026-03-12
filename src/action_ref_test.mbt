@@ -74,6 +74,17 @@ test "action ref: resolve builtin artifact aliases" {
 }
 
 ///|
+test "action ref: resolve builtin cache aliases" {
+  let restore = expect_resolved(resolve_action_uses("actions/cache/restore@v4"))
+  let save = expect_resolved(resolve_action_uses("actions/cache/save@v4"))
+
+  inspect(restore.kind, content="cache-restore")
+  inspect(restore.backend, content="builtin")
+  inspect(save.kind, content="cache-save")
+  inspect(save.backend, content="builtin")
+}
+
+///|
 test "action ref: resolve docker image action" {
   let docker_action = expect_resolved(
     resolve_action_uses("docker://alpine:3.21"),

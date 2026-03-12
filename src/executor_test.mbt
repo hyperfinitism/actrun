@@ -809,6 +809,61 @@ async test "executor: builtin artifact actions upload and download files" {
 
 ///|
 #cfg(target="native")
+async test "executor: builtin cache save and restore roundtrip across jobs" {
+  let workspace = prepare_workspace("executor-builtin-cache")
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "save",
+      [
+        new_run_step(
+          "write",
+          "mkdir -p cache-dir\nprintf '%s' ocean > cache-dir/value.txt",
+          shell=Some("bash"),
+        ),
+        new_uses_step("save", "actions/cache/save@v4", with_values={
+          "key": "compat-cache-v1",
+          "path": "cache-dir",
+        }),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+    new_job(
+      "restore",
+      [
+        new_run_step("clear", "rm -rf cache-dir", shell=Some("bash")),
+        new_uses_step("restore", "actions/cache/restore@v4", with_values={
+          "key": "compat-cache-v1",
+          "path": "cache-dir",
+        }),
+        new_run_step(
+          "verify",
+          "printf '%s|%s' \"${{ steps.restore.outputs.cache-hit }}\" \"$(cat cache-dir/value.txt)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      needs=["save"],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+
+  let save = expect_task_report(report, "save/save")
+  inspect(save.status, content="success")
+  let restore = expect_task_report(report, "restore/restore")
+  inspect(restore.status, content="success")
+  let verify = expect_task_report(report, "restore/verify")
+  inspect(verify.status, content="success")
+  inspect(verify.stdout.trim(chars=" \n\r\t").to_string(), content="true|ocean")
+}
+
+///|
+#cfg(target="native")
 async test "executor: local composite action runs inner steps" {
   let workspace = prepare_workspace("executor-local-action")
   ensure_dir(workspace + "/.github")

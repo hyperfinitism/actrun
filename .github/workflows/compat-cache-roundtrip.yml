@@ -1,0 +1,55 @@
+name: Compat Cache Roundtrip
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/compat-cache-roundtrip.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Prepare cache
+        shell: bash
+        run: |
+          mkdir -p cache-dir
+          printf '%s' ocean > cache-dir/value.txt
+      - name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          key: compat-cache-v1
+          path: cache-dir
+
+  restore:
+    needs:
+      - save
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clear path
+        shell: bash
+        run: rm -rf cache-dir
+      - name: Restore cache
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          key: compat-cache-v1
+          path: cache-dir
+      - name: Build report
+        shell: bash
+        run: |
+          mkdir -p report
+          printf '%s|%s' \
+            "${{ steps.restore.outputs.cache-hit }}" \
+            "$(cat cache-dir/value.txt)" > report/result.txt
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-cache-report
+          path: report/result.txt

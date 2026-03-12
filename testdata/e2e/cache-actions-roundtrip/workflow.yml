@@ -1,0 +1,47 @@
+name: e2e-cache-actions
+
+on:
+  push:
+    paths:
+      - workflow.yml
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    steps:
+      - id: prepare
+        name: Prepare cache
+        shell: bash
+        run: |
+          mkdir -p cache-dir
+          printf '%s' ocean > cache-dir/value.txt
+      - id: save
+        name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          key: compat-cache-v1
+          path: cache-dir
+
+  restore:
+    needs:
+      - save
+    runs-on: ubuntu-latest
+    steps:
+      - id: clear
+        name: Clear path
+        shell: bash
+        run: rm -rf cache-dir
+      - name: Restore cache
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          key: compat-cache-v1
+          path: cache-dir
+      - id: build-report
+        name: Build artifact
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          printf '%s|%s' \
+            "${{ steps.restore.outputs.cache-hit }}" \
+            "$(cat cache-dir/value.txt)" > artifacts/result.txt
