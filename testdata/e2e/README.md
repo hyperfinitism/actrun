@@ -13,6 +13,7 @@
 - `matrix-include-basic`: `strategy.matrix.include` と `${{ matrix.* }}` の最小展開
 - `matrix-exclude-basic`: `strategy.matrix.exclude` が row を除外する
 - `matrix-mixed-include-basic`: `strategy.matrix` の axes と include を同時に展開する
+- `matrix-max-parallel-basic`: `strategy.matrix.max-parallel` が expanded row を段階的に throttle しても全 row が実行される
 - `job-failure-blocked`: required step failure と downstream `blocked`
 - `unsupported-uses`: unsupported `uses:` を CLI error として reject
 - `unsupported-matrix`: matrix outputs のような未対応 matrix 構文を CLI error として reject

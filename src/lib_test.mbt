@@ -298,6 +298,52 @@ test "parser: parse mixed matrix axes and include rows" {
 }
 
 ///|
+test "parser: parse matrix max parallel" {
+  let src =
+    #|name: ci
+    #|on: push
+    #|jobs:
+    #|  build:
+    #|    strategy:
+    #|      max-parallel: 2
+    #|      matrix:
+    #|        os: [ubuntu-latest, macos-latest]
+    #|        target: [native, js]
+    #|    runs-on: ${{ matrix.os }}
+    #|    steps:
+    #|      - run: printf '%s|%s' '${{ matrix.os }}' '${{ matrix.target }}'
+  let parsed = parse_workflow_yaml(src)
+  let workflow = expect_workflow(parsed)
+
+  inspect(parsed.errors, content="[]")
+  inspect(workflow.jobs[0].matrix.unwrap().rows.length(), content="4")
+  inspect(workflow.jobs[0].matrix.unwrap().max_parallel, content="Some(2)")
+}
+
+///|
+test "parser: reject non-positive matrix max parallel" {
+  let src =
+    #|name: ci
+    #|on: push
+    #|jobs:
+    #|  build:
+    #|    strategy:
+    #|      max-parallel: 0
+    #|      matrix:
+    #|        os: [ubuntu-latest]
+    #|    runs-on: ${{ matrix.os }}
+    #|    steps:
+    #|      - run: printf '%s' ok
+  let parsed = parse_workflow_yaml(src)
+
+  inspect(parsed.workflow is None, content="true")
+  inspect(
+    parsed.errors,
+    content="[\"jobs.build.strategy.max-parallel must be positive\"]",
+  )
+}
+
+///|
 test "push trigger: branch and path filters" {
   let trigger = new_push_trigger(branches=["main"], paths=["src/*", "README.md"])
   let matched = new_push_event("main", ["src/lib.mbt"])

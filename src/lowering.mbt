@@ -430,6 +430,7 @@ fn substitute_matrix_step(
 fn substitute_matrix_job(
   job : JobSpec,
   actual_id : String,
+  actual_needs : Array[String],
   matrix_values : Map[String, String],
 ) -> JobSpec {
   let steps : Array[StepSpec] = []
@@ -440,7 +441,7 @@ fn substitute_matrix_job(
     actual_id,
     steps,
     name=substitute_matrix_text(job.name, matrix_values),
-    needs=job.needs,
+    needs=actual_needs,
     outputs=substitute_matrix_map(job.outputs, matrix_values),
     runs_on=substitute_matrix_list(job.runs_on, matrix_values),
     env=substitute_matrix_map(job.env, matrix_values),
@@ -499,12 +500,21 @@ fn expand_matrix_jobs(
           errors.push("job '\{job.id}' matrix outputs are not supported in P0")
           continue
         }
+        let limit = matrix.max_parallel.unwrap_or(matrix.rows.length())
         let mut row_index = 0
         for row in matrix.rows {
+          let actual_needs : Array[String] = []
+          for need in job.needs {
+            actual_needs.push(need)
+          }
+          if row_index >= limit {
+            actual_needs.push(matrix_job_id(job.id, row_index - limit))
+          }
           expanded.push({
             job: substitute_matrix_job(
               job,
               matrix_job_id(job.id, row_index),
+              actual_needs,
               row,
             ),
           })

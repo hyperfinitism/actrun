@@ -130,14 +130,16 @@ pub struct JobSpec {
 pub struct JobMatrixSpec {
   rows : Array[Map[String, String]]
   fail_fast : Bool
+  max_parallel : Int?
 }
 
 ///|
 pub fn new_job_matrix(
   rows : Array[Map[String, String]],
   fail_fast? : Bool = true,
+  max_parallel? : Int? = None,
 ) -> JobMatrixSpec {
-  { rows, fail_fast }
+  { rows, fail_fast, max_parallel }
 }
 
 ///|

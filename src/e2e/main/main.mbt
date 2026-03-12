@@ -894,6 +894,55 @@ async fn run_matrix_mixed_include_basic() -> Unit {
 
 ///|
 #cfg(target="native")
+async fn run_matrix_max_parallel_basic() -> Unit {
+  let scenario = "matrix-max-parallel-basic"
+  let workspace = e2e_prepare_copied_dir(
+    "_build/e2e/workspaces",
+    scenario,
+    e2e_fixture_dir(scenario),
+  )
+  let result = e2e_run_cli([
+    e2e_join_path(workspace, "workflow.yml"),
+    "--event",
+    e2e_join_path(workspace, "event.json"),
+  ])
+  e2e_expect_ok(result, scenario)
+  e2e_expect_contains(
+    result.stdout,
+    "workflow=e2e-matrix-max-parallel",
+    scenario,
+  )
+  e2e_expect_contains(result.stdout, "state=completed", scenario)
+  e2e_expect_contains(result.stdout, "build__matrix_1/emit: success", scenario)
+  e2e_expect_contains(result.stdout, "build__matrix_2/emit: success", scenario)
+  e2e_expect_contains(result.stdout, "build__matrix_3/emit: success", scenario)
+  e2e_expect_contains(result.stdout, "build__matrix_4/emit: success", scenario)
+  e2e_expect_eq(
+    e2e_read_text(
+      e2e_join_path(workspace, "artifacts/ubuntu-latest-native.txt"),
+    ),
+    "ubuntu-latest|native",
+    scenario + " ubuntu native artifact",
+  )
+  e2e_expect_eq(
+    e2e_read_text(e2e_join_path(workspace, "artifacts/ubuntu-latest-js.txt")),
+    "ubuntu-latest|js",
+    scenario + " ubuntu js artifact",
+  )
+  e2e_expect_eq(
+    e2e_read_text(e2e_join_path(workspace, "artifacts/macos-latest-native.txt")),
+    "macos-latest|native",
+    scenario + " macos native artifact",
+  )
+  e2e_expect_eq(
+    e2e_read_text(e2e_join_path(workspace, "artifacts/macos-latest-js.txt")),
+    "macos-latest|js",
+    scenario + " macos js artifact",
+  )
+}
+
+///|
+#cfg(target="native")
 async fn run_job_failure_blocked() -> Unit {
   let scenario = "job-failure-blocked"
   let workspace = e2e_prepare_copied_dir(
@@ -2905,6 +2954,10 @@ async fn main {
   println("e2e: matrix-mixed-include-basic")
   run_matrix_mixed_include_basic()
   println("e2e: matrix-mixed-include-basic ok")
+
+  println("e2e: matrix-max-parallel-basic")
+  run_matrix_max_parallel_basic()
+  println("e2e: matrix-max-parallel-basic ok")
 
   println("e2e: job-failure-blocked")
   run_job_failure_blocked()

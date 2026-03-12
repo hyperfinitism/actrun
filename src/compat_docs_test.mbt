@@ -278,6 +278,26 @@ test "compat docs: lower mixed matrix include fixture" {
 }
 
 ///|
+test "compat docs: lower matrix max parallel fixture" {
+  let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
+    "strategy-matrix-max-parallel",
+  )
+  let first = flow_task_by_id(lowered.ir, "build__matrix_1/show")
+  let second = flow_task_by_id(lowered.ir, "build__matrix_2/show")
+  let third = flow_task_by_id(lowered.ir, "build__matrix_3/show")
+  let fourth = flow_task_by_id(lowered.ir, "build__matrix_4/show")
+
+  inspect(fixture.id, content="docs-strategy-matrix-max-parallel")
+  inspect(workflow.jobs[0].matrix.unwrap().rows.length(), content="4")
+  inspect(workflow.jobs[0].matrix.unwrap().max_parallel, content="Some(2)")
+  inspect(lowered.errors, content="[]")
+  inspect(first.needs, content="[]")
+  inspect(second.needs, content="[]")
+  inspect(third.needs, content="[\"build__matrix_1/__finish\"]")
+  inspect(fourth.needs, content="[\"build__matrix_2/__finish\"]")
+}
+
+///|
 #cfg(target="native")
 async test "compat docs: missing env property evaluates to empty string" {
   let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(

@@ -1,0 +1,17 @@
+name: ci-matrix-max-parallel
+on: push
+jobs:
+  build:
+    strategy:
+      max-parallel: 2
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        target:
+          - native
+          - js
+    runs-on: ${{ matrix.os }}
+    steps:
+      - id: show
+        run: printf '%s|%s' '${{ matrix.os }}' '${{ matrix.target }}'

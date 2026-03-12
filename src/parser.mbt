@@ -550,6 +550,35 @@ fn yaml_as_optional_bool(
 }
 
 ///|
+fn yaml_as_optional_int(
+  value : YamlValue?,
+  errors : Array[String],
+  ctx : String,
+) -> Int? {
+  match value {
+    Some(Str(text)) => {
+      let trimmed = text.trim(chars=" \t\r\n").to_string()
+      if trimmed.length() == 0 {
+        return None
+      }
+      let parsed = @strconv.parse_int64(trimmed) catch {
+        _ => {
+          errors.push(ctx + " must be an integer")
+          return None
+        }
+      }
+      Some(parsed.to_int())
+    }
+    Some(Null) => None
+    Some(_) => {
+      errors.push(ctx + " must be an integer")
+      None
+    }
+    None => None
+  }
+}
+
+///|
 fn yaml_as_string_map_list(
   value : YamlValue?,
   errors : Array[String],
@@ -763,7 +792,16 @@ fn parse_job_matrix(
     errors,
     ctx + ".fail-fast",
   ).unwrap_or(true)
-  Some(new_job_matrix(rows, fail_fast~))
+  let max_parallel = yaml_as_optional_int(
+    yaml_obj_get(strategy_fields, "max-parallel"),
+    errors,
+    ctx + ".max-parallel",
+  )
+  if max_parallel is Some(value) && value <= 0 {
+    errors.push(ctx + ".max-parallel must be positive")
+    return None
+  }
+  Some(new_job_matrix(rows, fail_fast~, max_parallel~))
 }
 
 ///|

@@ -1,0 +1,22 @@
+name: e2e-matrix-max-parallel
+'on':
+  push:
+    paths:
+      - workflow.yml
+jobs:
+  build:
+    strategy:
+      max-parallel: 2
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        target:
+          - native
+          - js
+    runs-on: ${{ matrix.os }}
+    steps:
+      - id: emit
+        run: |
+          mkdir -p artifacts
+          printf '%s|%s' '${{ matrix.os }}' '${{ matrix.target }}' > artifacts/${{ matrix.os }}-${{ matrix.target }}.txt

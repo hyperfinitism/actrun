@@ -31,7 +31,7 @@ pub fn materialize_bit_push_workspace_native(String, PushEvent, String, remote_u
 
 pub fn new_job(String, Array[StepSpec], name? : String, needs? : Array[String], outputs? : Map[String, String], runs_on? : Array[String], env? : Map[String, String], defaults? : RunDefaults, matrix? : JobMatrixSpec?, reusable_workflow? : String?, container_image? : String?) -> JobSpec
 
-pub fn new_job_matrix(Array[Map[String, String]], fail_fast? : Bool) -> JobMatrixSpec
+pub fn new_job_matrix(Array[Map[String, String]], fail_fast? : Bool, max_parallel? : Int?) -> JobMatrixSpec
 
 pub fn new_local_action(Array[StepSpec], name? : String, inputs? : Map[String, String]) -> LocalActionSpec
 
@@ -118,6 +118,7 @@ pub struct GitHubActionPrefetchResult {
 pub struct JobMatrixSpec {
   rows : Array[Map[String, String]]
   fail_fast : Bool
+  max_parallel : Int?
 }
 
 pub struct JobSpec {
