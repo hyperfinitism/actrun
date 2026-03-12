@@ -1,0 +1,8 @@
+id=docs-cache-fail-on-cache-miss
+source=docs
+mode=supported
+kind=run
+url=https://github.com/actions/cache
+docs_urls=https://github.com/actions/cache;https://docs.github.com/en/actions/reference/dependency-caching-reference
+added_at=2026-03-13
+notes=fail-on-cache-miss makes a cache miss fail while continue-on-error still exposes failure outcome and success conclusion

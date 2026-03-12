@@ -1871,6 +1871,100 @@ async test "executor: builtin cache lookup-only skips restore but still saves pr
 
 ///|
 #cfg(target="native")
+async test "executor: builtin cache restore fail-on-cache-miss fails exact miss" {
+  let workspace = prepare_workspace(
+    "executor-builtin-cache-fail-on-miss-restore",
+  )
+  test_support_remove_tree(executor_test_cache_store_root(workspace))
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "restore",
+      [
+        new_uses_step(
+          "restore",
+          "actions/cache/restore@v4",
+          with_values={
+            "key": "compat-cache-fail-on-miss-v1",
+            "path": "cache-dir",
+            "fail-on-cache-miss": "true",
+          },
+          continue_on_error="true",
+        ),
+        new_run_step(
+          "verify",
+          "printf '%s|%s|%s' \"${{ steps.restore.outcome }}\" \"${{ steps.restore.conclusion }}\" \"$(if [ -f cache-dir/value.txt ]; then printf yes; else printf no; fi)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+
+  let restore = expect_task_report(report, "restore/restore")
+  inspect(restore.status, content="failed")
+  let verify = expect_task_report(report, "restore/verify")
+  inspect(verify.status, content="success")
+  inspect(
+    verify.stdout.trim(chars=" \n\r\t").to_string(),
+    content="failure|success|no",
+  )
+}
+
+///|
+#cfg(target="native")
+async test "executor: builtin cache action fail-on-cache-miss fails exact miss" {
+  let workspace = prepare_workspace("executor-builtin-cache-fail-on-miss-main")
+  test_support_remove_tree(executor_test_cache_store_root(workspace))
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "restore",
+      [
+        new_uses_step(
+          "cache",
+          "actions/cache@v4",
+          with_values={
+            "key": "compat-cache-main-fail-on-miss-v1",
+            "path": "cache-dir",
+            "fail-on-cache-miss": "true",
+          },
+          continue_on_error="true",
+        ),
+        new_run_step(
+          "verify",
+          "printf '%s|%s' \"${{ steps.cache.outcome }}\" \"${{ steps.cache.conclusion }}\"",
+          shell=Some("bash"),
+        ),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+
+  let cache = expect_task_report(report, "restore/cache")
+  inspect(cache.status, content="failed")
+  let verify = expect_task_report(report, "restore/verify")
+  inspect(verify.status, content="success")
+  inspect(
+    verify.stdout.trim(chars=" \n\r\t").to_string(),
+    content="failure|success",
+  )
+}
+
+///|
+#cfg(target="native")
 async test "executor: builtin setup-node exposes requested node version output and PATH shim" {
   let workspace = prepare_workspace("executor-builtin-setup-node")
   let node_log_path = workspace + "/setup-node.log"

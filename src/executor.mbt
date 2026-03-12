@@ -1889,6 +1889,12 @@ fn parse_cache_lookup_only(value : String) -> Bool {
 }
 
 ///|
+fn parse_cache_fail_on_cache_miss(value : String) -> Bool {
+  let normalized = value.trim(chars=" \t\r\n").to_lower()
+  normalized == "true" || normalized == "1" || normalized == "yes"
+}
+
+///|
 fn parse_checkout_ref(value : String) -> String {
   value.trim(chars=" \t\r\n").to_string()
 }
@@ -3297,6 +3303,9 @@ fn execute_restore_cache_native(
   let lookup_only = parse_cache_lookup_only(
     resolved_plan_env.get("INPUT_LOOKUP_ONLY").unwrap_or(""),
   )
+  let fail_on_cache_miss = parse_cache_fail_on_cache_miss(
+    resolved_plan_env.get("INPUT_FAIL_ON_CACHE_MISS").unwrap_or(""),
+  )
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
   if key.length() == 0 {
     return cache_input_result_failure(
@@ -3314,7 +3323,22 @@ fn execute_restore_cache_native(
     ) {
     Exact(_) => "true"
     Partial(_) => "false"
-    Miss => "false"
+    Miss =>
+      if fail_on_cache_miss {
+        return {
+          report: task_report_failure(
+            plan,
+            workspace_root,
+            "cache miss for key '\{key}' and fail-on-cache-miss is true",
+          ),
+          env_updates: {},
+          path_entries: [],
+          output_values: {},
+          state_updates: {},
+        }
+      } else {
+        "false"
+      }
     Err(message) =>
       return {
         report: task_report_failure(plan, workspace_root, message),
@@ -3347,6 +3371,9 @@ fn execute_cache_action_native(
   let lookup_only = parse_cache_lookup_only(
     resolved_plan_env.get("INPUT_LOOKUP_ONLY").unwrap_or(""),
   )
+  let fail_on_cache_miss = parse_cache_fail_on_cache_miss(
+    resolved_plan_env.get("INPUT_FAIL_ON_CACHE_MISS").unwrap_or(""),
+  )
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
   if key.length() == 0 {
     return cache_input_result_failure(plan, workspace_root, "cache", true)
@@ -3360,7 +3387,27 @@ fn execute_cache_action_native(
     ) {
     Exact(_) => "true"
     Partial(_) => "false"
-    Miss => ""
+    Miss =>
+      if fail_on_cache_miss {
+        return {
+          report: task_report_failure(
+            plan,
+            workspace_root,
+            "cache miss for key '\{key}' and fail-on-cache-miss is true",
+          ),
+          env_updates: {},
+          path_entries: [],
+          output_values: {},
+          state_updates: {
+            "CACHE_KEY": key,
+            "CACHE_PATH": path_input,
+            "CACHE_HIT": "",
+            "CACHE_SKIP_POST": "true",
+          },
+        }
+      } else {
+        ""
+      }
     Err(message) =>
       return {
         report: task_report_failure(plan, workspace_root, message),
@@ -3392,6 +3439,9 @@ fn execute_cache_post_save_native(
   state : JobRuntimeState,
 ) -> TaskRunReport {
   let saved_state = action_scope_state(state, plan.action_scope)
+  if saved_state.get("CACHE_SKIP_POST").unwrap_or("") == "true" {
+    return task_report_success(plan, workspace_root)
+  }
   if saved_state.get("CACHE_HIT").unwrap_or("") == "true" {
     return task_report_success(plan, workspace_root)
   }

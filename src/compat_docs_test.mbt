@@ -514,6 +514,26 @@ async test "compat docs: cache lookup-only reports hit without restoring files" 
 }
 
 ///|
+#cfg(target="native")
+async test "compat docs: cache fail-on-cache-miss exposes failure outcome on miss" {
+  let (fixture, workflow) = compat_expect_docs_fixture(
+    "cache-fail-on-cache-miss",
+  )
+  let workspace = prepare_workspace("compat-docs-cache-fail-on-cache-miss")
+  test_support_remove_tree(compat_docs_cache_store_root(workspace))
+  let report = execute_lowered_native(
+    lower_push_workflow(workflow),
+    workspace_root=workspace,
+  )
+  let task = compat_expect_task_report(report, "restore/verify")
+
+  inspect(fixture.id, content="docs-cache-fail-on-cache-miss")
+  inspect(report.ok, content="true")
+  inspect(task.status, content="success")
+  inspect(task.stdout, content="<failure|success|no>")
+}
+
+///|
 test "compat docs: lower steps if status functions fixture" {
   let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
     "steps-if-status-functions",

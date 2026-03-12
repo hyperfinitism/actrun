@@ -1,0 +1,20 @@
+name: docs-cache-fail-on-cache-miss
+'on': push
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - id: restore
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          key: compat-cache-fail-on-miss-docs-v1
+          path: cache-dir
+          fail-on-cache-miss: true
+      - id: verify
+        shell: bash
+        run: |
+          printf '<%s|%s|%s>' \
+            "${{ steps.restore.outcome }}" \
+            "${{ steps.restore.conclusion }}" \
+            "$(if [ -f cache-dir/value.txt ]; then printf yes; else printf no; fi)"

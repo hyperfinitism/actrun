@@ -66,6 +66,13 @@ case "$workflow_file" in
       compat_key="compat-cache-lookup-only-local-$(date +%s)-$$"
     fi
     ;;
+  compat-cache-fail-on-cache-miss.yml)
+    report_name="compat-cache-fail-on-cache-miss-report"
+    event_added_path=".github/workflows/__compat_cache_fail_on_cache_miss__.trigger"
+    if [ -z "$compat_key" ]; then
+      compat_key="compat-cache-fail-on-cache-miss-local-$(date +%s)-$$"
+    fi
+    ;;
   compat-setup-node-basic.yml)
     report_name="compat-setup-node-basic-report"
     event_added_path=".github/workflows/__compat_setup_node_basic__.trigger"

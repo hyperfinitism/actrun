@@ -1,0 +1,28 @@
+name: e2e-cache-fail-on-cache-miss
+
+on:
+  push:
+    paths:
+      - workflow.yml
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - id: restore
+        name: Restore cache
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          key: compat-cache-fail-on-miss-e2e-v1
+          path: cache-dir
+          fail-on-cache-miss: true
+      - id: build-report
+        name: Build artifact
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          printf '%s|%s|%s' \
+            "${{ steps.restore.outcome }}" \
+            "${{ steps.restore.conclusion }}" \
+            "$(if [ -f cache-dir/value.txt ]; then printf yes; else printf no; fi)" > artifacts/result.txt

@@ -11,6 +11,7 @@
 - `cache-auto-save-roundtrip`: `actions/cache` 本体の miss -> deferred save -> next job hit
 - `cache-restore-keys`: `actions/cache/restore` が `restore-keys` の prefix hit を復元し、`cache-hit=false` を返す
 - `cache-lookup-only`: `actions/cache/restore` の `lookup-only` が hit 判定だけ返し、workspace には download しない
+- `cache-fail-on-cache-miss`: `actions/cache/restore` の `fail-on-cache-miss` が miss を failure outcome にする
 - `checkout-sparse-path`: `actions/checkout` の `path` と `sparse-checkout`
 - `checkout-fetch-depth`: `actions/checkout` の default shallow clone と `fetch-depth: 0`
 - `checkout-ref`: `actions/checkout` の `ref` で非 default branch を shallow checkout する
