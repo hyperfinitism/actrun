@@ -1731,6 +1731,146 @@ async test "executor: builtin cache restore-keys prefers the most recent prefix 
 
 ///|
 #cfg(target="native")
+async test "executor: builtin cache restore lookup-only reports exact hit without downloading files" {
+  let workspace = prepare_workspace(
+    "executor-builtin-cache-lookup-only-restore",
+  )
+  test_support_remove_tree(executor_test_cache_store_root(workspace))
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "save",
+      [
+        new_run_step(
+          "write",
+          "mkdir -p cache-dir\nprintf '%s' ocean > cache-dir/value.txt",
+          shell=Some("bash"),
+        ),
+        new_uses_step("save", "actions/cache/save@v4", with_values={
+          "key": "compat-cache-lookup-only-v1",
+          "path": "cache-dir",
+        }),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+    new_job(
+      "restore",
+      [
+        new_run_step("clear", "rm -rf cache-dir", shell=Some("bash")),
+        new_uses_step("restore", "actions/cache/restore@v4", with_values={
+          "key": "compat-cache-lookup-only-v1",
+          "path": "cache-dir",
+          "lookup-only": "true",
+        }),
+        new_run_step(
+          "verify",
+          "printf '%s|%s' \"${{ steps.restore.outputs.cache-hit }}\" \"$(if [ -f cache-dir/value.txt ]; then printf yes; else printf no; fi)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      needs=["save"],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+
+  let restore = expect_task_report(report, "restore/restore")
+  inspect(restore.status, content="success")
+  let verify = expect_task_report(report, "restore/verify")
+  inspect(verify.status, content="success")
+  inspect(verify.stdout.trim(chars=" \n\r\t").to_string(), content="true|no")
+}
+
+///|
+#cfg(target="native")
+async test "executor: builtin cache lookup-only skips restore but still saves primary key after partial hit" {
+  let workspace = prepare_workspace("executor-builtin-cache-lookup-only-main")
+  test_support_remove_tree(executor_test_cache_store_root(workspace))
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "seed",
+      [
+        new_run_step(
+          "write",
+          "mkdir -p cache-dir\nprintf '%s' ocean > cache-dir/value.txt",
+          shell=Some("bash"),
+        ),
+        new_uses_step("save", "actions/cache/save@v4", with_values={
+          "key": "compat-cache-lookup-main-v1",
+          "path": "cache-dir",
+        }),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+    new_job(
+      "promote",
+      [
+        new_run_step(
+          "write",
+          "mkdir -p cache-dir\nprintf '%s' wave > cache-dir/value.txt",
+          shell=Some("bash"),
+        ),
+        new_uses_step("cache", "actions/cache@v4", with_values={
+          "key": "compat-cache-lookup-main-v2",
+          "restore-keys": "compat-cache-lookup-main-\n",
+          "path": "cache-dir",
+          "lookup-only": "true",
+        }),
+        new_run_step(
+          "verify_lookup",
+          "printf '%s|%s' \"${{ steps.cache.outputs.cache-hit }}\" \"$(cat cache-dir/value.txt)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      needs=["seed"],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+    new_job(
+      "verify",
+      [
+        new_run_step("clear", "rm -rf cache-dir", shell=Some("bash")),
+        new_uses_step("cache", "actions/cache@v4", with_values={
+          "key": "compat-cache-lookup-main-v2",
+          "path": "cache-dir",
+        }),
+        new_run_step(
+          "verify",
+          "printf '%s|%s' \"${{ steps.cache.outputs.cache-hit }}\" \"$(cat cache-dir/value.txt)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      needs=["promote"],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+
+  let verify_lookup = expect_task_report(report, "promote/verify_lookup")
+  inspect(verify_lookup.status, content="success")
+  inspect(
+    verify_lookup.stdout.trim(chars=" \n\r\t").to_string(),
+    content="false|wave",
+  )
+  let cache_post = expect_task_report(report, "promote/cache__post")
+  inspect(cache_post.status, content="success")
+  let verify = expect_task_report(report, "verify/verify")
+  inspect(verify.status, content="success")
+  inspect(verify.stdout.trim(chars=" \n\r\t").to_string(), content="true|wave")
+}
+
+///|
+#cfg(target="native")
 async test "executor: builtin setup-node exposes requested node version output and PATH shim" {
   let workspace = prepare_workspace("executor-builtin-setup-node")
   let node_log_path = workspace + "/setup-node.log"

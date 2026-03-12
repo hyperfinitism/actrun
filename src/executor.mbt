@@ -1883,6 +1883,12 @@ fn parse_checkout_submodules(value : String) -> String {
 }
 
 ///|
+fn parse_cache_lookup_only(value : String) -> Bool {
+  let normalized = value.trim(chars=" \t\r\n").to_lower()
+  normalized == "true" || normalized == "1" || normalized == "yes"
+}
+
+///|
 fn parse_checkout_ref(value : String) -> String {
   value.trim(chars=" \t\r\n").to_string()
 }
@@ -3218,6 +3224,7 @@ fn restore_cache_store_native(
   workspace_root : String,
   key : String,
   restore_keys_input : String,
+  lookup_only : Bool,
 ) -> CacheRestoreLookup {
   let lookup = resolve_cache_restore_lookup(
     workspace_root, key, restore_keys_input,
@@ -3227,6 +3234,14 @@ fn restore_cache_store_native(
     Partial(found_key) => found_key
     Miss => return Miss
     Err(message) => return Err(message)
+  }
+  if lookup_only {
+    return match lookup {
+      Exact(_) => Exact(matched_key)
+      Partial(_) => Partial(matched_key)
+      Miss => Miss
+      Err(message) => Err(message)
+    }
   }
   let cache_root = cache_store_path(workspace_root, matched_key)
   let entries = try @xfs.read_dir(cache_root) catch {
@@ -3279,6 +3294,9 @@ fn execute_restore_cache_native(
   let restore_keys_input = resolved_plan_env
     .get("INPUT_RESTORE_KEYS")
     .unwrap_or("")
+  let lookup_only = parse_cache_lookup_only(
+    resolved_plan_env.get("INPUT_LOOKUP_ONLY").unwrap_or(""),
+  )
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
   if key.length() == 0 {
     return cache_input_result_failure(
@@ -3291,7 +3309,9 @@ fn execute_restore_cache_native(
     )
   }
   let cache_hit = match
-    restore_cache_store_native(workspace_root, key, restore_keys_input) {
+    restore_cache_store_native(
+      workspace_root, key, restore_keys_input, lookup_only,
+    ) {
     Exact(_) => "true"
     Partial(_) => "false"
     Miss => "false"
@@ -3324,6 +3344,9 @@ fn execute_cache_action_native(
   let restore_keys_input = resolved_plan_env
     .get("INPUT_RESTORE_KEYS")
     .unwrap_or("")
+  let lookup_only = parse_cache_lookup_only(
+    resolved_plan_env.get("INPUT_LOOKUP_ONLY").unwrap_or(""),
+  )
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
   if key.length() == 0 {
     return cache_input_result_failure(plan, workspace_root, "cache", true)
@@ -3332,7 +3355,9 @@ fn execute_cache_action_native(
     return cache_input_result_failure(plan, workspace_root, "cache", false)
   }
   let cache_hit = match
-    restore_cache_store_native(workspace_root, key, restore_keys_input) {
+    restore_cache_store_native(
+      workspace_root, key, restore_keys_input, lookup_only,
+    ) {
     Exact(_) => "true"
     Partial(_) => "false"
     Miss => ""

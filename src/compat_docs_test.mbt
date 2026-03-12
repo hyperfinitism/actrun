@@ -496,6 +496,24 @@ async test "compat docs: cache restore-keys restores prefix hit and reports fals
 }
 
 ///|
+#cfg(target="native")
+async test "compat docs: cache lookup-only reports hit without restoring files" {
+  let (fixture, workflow) = compat_expect_docs_fixture("cache-lookup-only")
+  let workspace = prepare_workspace("compat-docs-cache-lookup-only")
+  test_support_remove_tree(compat_docs_cache_store_root(workspace))
+  let report = execute_lowered_native(
+    lower_push_workflow(workflow),
+    workspace_root=workspace,
+  )
+  let task = compat_expect_task_report(report, "restore/verify")
+
+  inspect(fixture.id, content="docs-cache-lookup-only")
+  inspect(report.ok, content="true")
+  inspect(task.status, content="success")
+  inspect(task.stdout, content="<true|no>")
+}
+
+///|
 test "compat docs: lower steps if status functions fixture" {
   let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
     "steps-if-status-functions",

@@ -1,0 +1,57 @@
+name: Compat Cache Lookup Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      compat_key:
+        description: Unique compat key for cache lookup-only
+        required: true
+        type: string
+  push:
+    paths:
+      - .github/workflows/__compat_cache_lookup_only__.trigger
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Prepare cache
+        shell: bash
+        run: |
+          mkdir -p cache-dir
+          printf '%s' ocean > cache-dir/value.txt
+      - name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ inputs.compat_key }}
+          path: cache-dir
+
+  restore:
+    needs:
+      - save
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clear path
+        shell: bash
+        run: rm -rf cache-dir
+      - id: restore
+        name: Lookup cache only
+        uses: actions/cache/restore@v4
+        with:
+          key: ${{ inputs.compat_key }}
+          path: cache-dir
+          lookup-only: true
+      - name: Build report
+        shell: bash
+        run: |
+          mkdir -p report
+          printf '%s|%s' \
+            "${{ steps.restore.outputs.cache-hit }}" \
+            "$(if [ -f cache-dir/value.txt ]; then printf yes; else printf no; fi)" > report/result.txt
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-cache-lookup-only-report
+          path: report/result.txt

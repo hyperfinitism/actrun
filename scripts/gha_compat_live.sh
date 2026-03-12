@@ -22,6 +22,10 @@ case "$workflow_file" in
     compat_key="compat-cache-restore-keys-$(date +%s)-$$"
     dispatch_args=(-f "compat_key=$compat_key")
     ;;
+  compat-cache-lookup-only.yml)
+    compat_key="compat-cache-lookup-only-$(date +%s)-$$"
+    dispatch_args=(-f "compat_key=$compat_key")
+    ;;
   compat-setup-node-basic.yml)
     compat_node_version="${ACTION_RUNNER_COMPAT_NODE_VERSION:-$(node --version | sed 's/^v//')}"
     dispatch_args=(-f "compat_node_version=$compat_node_version")

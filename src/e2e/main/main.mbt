@@ -996,6 +996,33 @@ async fn run_cache_restore_keys() -> Unit {
 
 ///|
 #cfg(target="native")
+async fn run_cache_lookup_only() -> Unit {
+  let scenario = "cache-lookup-only"
+  e2e_remove_tree("_build/action_runner/cache")
+  let workspace = e2e_prepare_copied_dir(
+    "_build/e2e/workspaces",
+    scenario,
+    e2e_fixture_dir(scenario),
+  )
+  let result = e2e_run_cli([
+    e2e_join_path(workspace, "workflow.yml"),
+    "--event",
+    e2e_join_path(workspace, "event.json"),
+  ])
+  e2e_expect_ok(result, scenario)
+  e2e_expect_contains(result.stdout, "workflow=e2e-cache-lookup-only", scenario)
+  e2e_expect_contains(result.stdout, "state=completed", scenario)
+  e2e_expect_contains(result.stdout, "save/save: success", scenario)
+  e2e_expect_contains(result.stdout, "restore/restore: success", scenario)
+  e2e_expect_eq(
+    e2e_read_text(e2e_join_path(workspace, "artifacts/result.txt")),
+    "true|no",
+    scenario + " result artifact",
+  )
+}
+
+///|
+#cfg(target="native")
 async fn run_checkout_sparse_path() -> Unit {
   let scenario = "checkout-sparse-path"
   let workspace = e2e_prepare_copied_dir(
@@ -3776,6 +3803,10 @@ async fn main {
   println("e2e: cache-restore-keys")
   run_cache_restore_keys()
   println("e2e: cache-restore-keys ok")
+
+  println("e2e: cache-lookup-only")
+  run_cache_lookup_only()
+  println("e2e: cache-lookup-only ok")
 
   println("e2e: checkout-sparse-path")
   run_checkout_sparse_path()
