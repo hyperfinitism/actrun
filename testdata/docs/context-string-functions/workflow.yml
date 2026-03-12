@@ -1,0 +1,20 @@
+name: string-functions
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GREETING: hello-from-job
+    steps:
+      - id: show
+        shell: bash
+        env:
+          REF_MATCH: ${{ contains(github.ref, 'heads/main') }}
+          REPO_MATCH: ${{ startsWith(github.repository, 'mizchi/') }}
+          NAME_MATCH: ${{ endsWith(github.workflow, 'functions') }}
+        run: |
+          printf '<%s|%s|%s|%s>' \
+            "${{ contains(env.GREETING, 'from-job') }}" \
+            "$REF_MATCH" \
+            "$REPO_MATCH" \
+            "$NAME_MATCH"

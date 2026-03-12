@@ -1012,13 +1012,30 @@ fn substitute_runtime_text(
                                               ).unwrap_or(""),
                                             )
                                           None =>
-                                            chunks.push(
-                                              exec_text_slice(
-                                                text,
-                                                open_idx,
-                                                close_idx + 2,
-                                              ),
-                                            )
+                                            match
+                                              evaluate_string_function_expression(
+                                                expression,
+                                                new_if_condition_context(
+                                                  step_outputs=state.step_outputs,
+                                                  step_outcomes=state.step_outcomes,
+                                                  step_conclusions=state.step_conclusions,
+                                                  env_context~,
+                                                  github_context~,
+                                                  runner_context~,
+                                                  needs_outputs~,
+                                                  needs_results~,
+                                                ),
+                                              ) {
+                                              Some(value) => chunks.push(value)
+                                              None =>
+                                                chunks.push(
+                                                  exec_text_slice(
+                                                    text,
+                                                    open_idx,
+                                                    close_idx + 2,
+                                                  ),
+                                                )
+                                            }
                                         }
                                     }
                                 }

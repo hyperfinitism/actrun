@@ -1185,6 +1185,44 @@ async fn run_setup_node_cache_npm() -> Unit {
 
 ///|
 #cfg(target="native")
+async fn run_expression_string_functions() -> Unit {
+  let scenario = "expression-string-functions"
+  let workspace = e2e_prepare_copied_dir(
+    "_build/e2e/workspaces",
+    scenario,
+    e2e_fixture_dir(scenario),
+  )
+  let result = e2e_run_cli([
+    e2e_join_path(workspace, "workflow.yml"),
+    "--event",
+    e2e_join_path(workspace, "event.json"),
+  ])
+  e2e_expect_ok(result, scenario)
+  e2e_expect_contains(
+    result.stdout,
+    "workflow=e2e-expression-string-functions",
+    scenario,
+  )
+  e2e_expect_contains(result.stdout, "state=completed", scenario)
+  e2e_expect_contains(result.stdout, "build/show: success", scenario)
+  e2e_expect_contains(result.stdout, "build/on_contains: success", scenario)
+  e2e_expect_contains(result.stdout, "build/on_starts: success", scenario)
+  e2e_expect_contains(result.stdout, "build/on_ends: success", scenario)
+  e2e_expect_contains(result.stdout, "build/skip_release: skipped", scenario)
+  e2e_expect_eq(
+    e2e_read_text(e2e_join_path(workspace, "artifacts/script.txt")),
+    "true|true|true|true",
+    scenario + " script artifact",
+  )
+  e2e_expect_eq(
+    e2e_read_text(e2e_join_path(workspace, "artifacts/result.txt")),
+    "yes|yes|yes|no",
+    scenario + " result artifact",
+  )
+}
+
+///|
+#cfg(target="native")
 async fn run_matrix_include_basic() -> Unit {
   let scenario = "matrix-include-basic"
   let workspace = e2e_prepare_copied_dir(
@@ -3565,6 +3603,10 @@ async fn main {
   println("e2e: setup-node-cache-npm")
   run_setup_node_cache_npm()
   println("e2e: setup-node-cache-npm ok")
+
+  println("e2e: expression-string-functions")
+  run_expression_string_functions()
+  println("e2e: expression-string-functions ok")
 
   println("e2e: matrix-include-basic")
   run_matrix_include_basic()

@@ -1,0 +1,34 @@
+name: steps-if-string-functions
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: on_contains
+        if: contains(github.ref, 'heads/main')
+        run: |
+          mkdir -p artifacts
+          printf '%s' 'contains-ran' > artifacts/contains.txt
+      - id: on_starts
+        if: startsWith(github.repository, 'mizchi/')
+        run: |
+          mkdir -p artifacts
+          printf '%s' 'starts-ran' > artifacts/starts.txt
+      - id: on_ends
+        if: endsWith(github.workflow, 'functions')
+        run: |
+          mkdir -p artifacts
+          printf '%s' 'ends-ran' > artifacts/ends.txt
+      - id: skip_release
+        if: contains(github.ref, 'release/')
+        run: |
+          mkdir -p artifacts
+          printf '%s' 'release-ran' > artifacts/release.txt
+      - id: verify
+        shell: bash
+        run: |
+          printf '<%s|%s|%s|%s>' \
+            "$(test -f artifacts/contains.txt && echo yes || echo no)" \
+            "$(test -f artifacts/starts.txt && echo yes || echo no)" \
+            "$(test -f artifacts/ends.txt && echo yes || echo no)" \
+            "$(test -f artifacts/release.txt && echo yes || echo no)"

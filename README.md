@@ -19,6 +19,7 @@
 - matrix job に対する `needs` fan-in と aggregated `${{ needs.<job>.result }}` / `${{ needs.<job>.outputs.* }}`
 - minimal job-level `if:` (`success()` default, `always()` / `failure()` / `cancelled()`, simple `github.*` / `needs.*` comparison)
 - minimal step-level `if:` (`success()` default, `always()` / `failure()` / `cancelled()`)
+- minimal expression functions (`contains`, `startsWith`, `endsWith`)
 - step-level `continue-on-error`
 - `${{ steps.<id>.outcome }}` / `${{ steps.<id>.conclusion }}` の最小対応
 - `uses: actions/upload-artifact@*` / `uses: actions/download-artifact@*` の最小 builtin emulator

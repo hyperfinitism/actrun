@@ -317,6 +317,71 @@ fn if_runner_name(expression : String) -> String? {
 }
 
 ///|
+fn split_top_level_if_arguments(text : String) -> Array[String]? {
+  let args : Array[String] = []
+  let mut depth = 0
+  let mut in_single = false
+  let mut in_double = false
+  let mut start = 0
+  let mut idx = 0
+  while idx < text.length() {
+    let ch = text.unsafe_get(idx)
+    if ch == '\'' && not(in_double) {
+      in_single = not(in_single)
+      idx += 1
+      continue
+    }
+    if ch == '"' && not(in_single) {
+      in_double = not(in_double)
+      idx += 1
+      continue
+    }
+    if not(in_single) && not(in_double) {
+      if ch == '(' {
+        depth += 1
+      } else if ch == ')' {
+        if depth == 0 {
+          return None
+        }
+        depth -= 1
+      } else if ch == ',' && depth == 0 {
+        args.push(
+          if_text_slice(text, start, idx).trim(chars=" \t\n\r").to_string(),
+        )
+        start = idx + 1
+      }
+    }
+    idx += 1
+  }
+  if depth != 0 || in_single || in_double {
+    return None
+  }
+  args.push(
+    if_text_slice(text, start, text.length()).trim(chars=" \t\n\r").to_string(),
+  )
+  Some(args)
+}
+
+///|
+fn if_function_arguments(
+  expression : String,
+  function_name : String,
+  arity : Int,
+) -> Array[String]? {
+  let trimmed = strip_if_outer_parens(expression)
+  let lower = trimmed.to_lower()
+  let prefix = function_name.to_lower() + "("
+  guard lower.has_prefix(prefix) && trimmed.has_suffix(")") else { return None }
+  let inner = if_text_slice(trimmed, prefix.length(), trimmed.length() - 1)
+  guard split_top_level_if_arguments(inner) is Some(args) else { return None }
+  if args.length() != arity {
+    None
+  } else {
+    Some(args)
+  }
+}
+
+///|
 fn[V] if_map_get_case_insensitive(values : Map[String, V], key : String) -> V? {
   match values.get(key) {
     Some(value) => Some(value)
@@ -384,11 +449,34 @@ fn condition_expression_has_status_check(text : String) -> Bool {
 }
 
 ///|
+fn if_string_function_supported(text : String) -> Bool {
+  match if_function_arguments(text, "contains", 2) {
+    Some(args) =>
+      return if_condition_supported(args[0]) && if_condition_supported(args[1])
+    None => ()
+  }
+  match if_function_arguments(text, "startsWith", 2) {
+    Some(args) =>
+      return if_condition_supported(args[0]) && if_condition_supported(args[1])
+    None => ()
+  }
+  match if_function_arguments(text, "endsWith", 2) {
+    Some(args) =>
+      return if_condition_supported(args[0]) && if_condition_supported(args[1])
+    None => ()
+  }
+  false
+}
+
+///|
 fn if_condition_atom_supported(text : String) -> Bool {
   if if_bool_literal(text) is Some(_) {
     return true
   }
   if if_quoted_string(text) is Some(_) {
+    return true
+  }
+  if if_string_function_supported(text) {
     return true
   }
   let trimmed = strip_if_outer_parens(text)
@@ -499,6 +587,55 @@ fn if_condition_value_eq(left : ConditionValue, right : ConditionValue) -> Bool 
 }
 
 ///|
+fn if_condition_value_to_string(value : ConditionValue) -> String {
+  match value {
+    Bool(flag) => if flag { "true" } else { "false" }
+    String(text) => text
+  }
+}
+
+///|
+fn if_string_function_value(text : String, ctx : IfConditionContext) -> Bool? {
+  match if_function_arguments(text, "contains", 2) {
+    Some(args) => {
+      let haystack = if_condition_value_to_string(
+        if_condition_atom_value(args[0], ctx),
+      )
+      let needle = if_condition_value_to_string(
+        if_condition_atom_value(args[1], ctx),
+      )
+      return Some(haystack.contains(needle))
+    }
+    None => ()
+  }
+  match if_function_arguments(text, "startsWith", 2) {
+    Some(args) => {
+      let text_value = if_condition_value_to_string(
+        if_condition_atom_value(args[0], ctx),
+      )
+      let prefix = if_condition_value_to_string(
+        if_condition_atom_value(args[1], ctx),
+      )
+      return Some(text_value.has_prefix(prefix))
+    }
+    None => ()
+  }
+  match if_function_arguments(text, "endsWith", 2) {
+    Some(args) => {
+      let text_value = if_condition_value_to_string(
+        if_condition_atom_value(args[0], ctx),
+      )
+      let suffix = if_condition_value_to_string(
+        if_condition_atom_value(args[1], ctx),
+      )
+      return Some(text_value.has_suffix(suffix))
+    }
+    None => ()
+  }
+  None
+}
+
+///|
 fn if_condition_atom_value(
   text : String,
   ctx : IfConditionContext,
@@ -509,6 +646,10 @@ fn if_condition_atom_value(
   }
   match if_quoted_string(text) {
     Some(value) => return String(value)
+    None => ()
+  }
+  match if_string_function_value(text, ctx) {
+    Some(value) => return Bool(value)
     None => ()
   }
   let trimmed = strip_if_outer_parens(text)
@@ -575,6 +716,17 @@ fn if_condition_atom_value(
     None => ()
   }
   String("")
+}
+
+///|
+fn evaluate_string_function_expression(
+  text : String,
+  ctx : IfConditionContext,
+) -> String? {
+  match if_string_function_value(text, ctx) {
+    Some(value) => Some(if value { "true" } else { "false" })
+    None => None
+  }
 }
 
 ///|

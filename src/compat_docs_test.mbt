@@ -766,6 +766,25 @@ async test "compat docs: github context is available in step env" {
 
 ///|
 #cfg(target="native")
+async test "compat docs: string functions are available in step script and env" {
+  let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(
+    "context-string-functions",
+  )
+  let report = execute_lowered_native(
+    lower_push_workflow(workflow),
+    workspace_root=workspace,
+    push_event=compat_push_event_fixture(fixture),
+  )
+  let task = compat_expect_task_report(report, "build/show")
+
+  inspect(fixture.id, content="docs-context-string-functions")
+  inspect(report.ok, content="true")
+  inspect(task.status, content="success")
+  inspect(task.stdout, content="<true|true|true|true>")
+}
+
+///|
+#cfg(target="native")
 async test "compat docs: github.action is available in step script and env" {
   let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(
     "context-github-action",
@@ -859,6 +878,40 @@ async test "compat docs: step if status functions work in push workflow" {
     @xfs.read_file_to_string(workspace + "/artifacts/result.txt"),
     content="no|yes|no|mizchi/action_runner",
   )
+}
+
+///|
+#cfg(target="native")
+async test "compat docs: step if string functions work in push workflow" {
+  let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(
+    "steps-if-string-functions",
+  )
+  let report = execute_lowered_native(
+    lower_push_workflow(workflow),
+    workspace_root=workspace,
+    push_event=compat_push_event_fixture(fixture),
+  )
+  let verify = compat_expect_task_report(report, "build/verify")
+
+  inspect(fixture.id, content="docs-steps-if-string-functions")
+  inspect(report.ok, content="true")
+  inspect(
+    compat_expect_task_report(report, "build/on_contains").status,
+    content="success",
+  )
+  inspect(
+    compat_expect_task_report(report, "build/on_starts").status,
+    content="success",
+  )
+  inspect(
+    compat_expect_task_report(report, "build/on_ends").status,
+    content="success",
+  )
+  inspect(
+    compat_expect_task_report(report, "build/skip_release").status,
+    content="skipped",
+  )
+  inspect(verify.stdout, content="<yes|yes|yes|no>")
 }
 
 ///|
