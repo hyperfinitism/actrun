@@ -449,6 +449,39 @@ test "lowering: builtin cache actions receive with values as INPUT env" {
 }
 
 ///|
+test "lowering: builtin cache action schedules deferred post save" {
+  let workflow = new_workflow("ci", [
+    new_job("test", [
+      new_uses_step("cache", "actions/cache@v4", with_values={
+        "key": "bundle-v1",
+        "path": "cache-dir",
+      }),
+      new_run_step("verify", "echo ok"),
+    ]),
+  ])
+
+  let result = lower_push_workflow(workflow)
+
+  inspect(result.errors, content="[]")
+
+  let cache_plan = expect_task_plan(result.plan, "test/cache")
+  inspect(cache_plan.action.unwrap().kind, content="cache")
+  inspect(cache_plan.action_scope, content="Some(\"test/cache\")")
+  inspect(cache_plan.env.get("INPUT_KEY").unwrap_or(""), content="bundle-v1")
+
+  let post_plan = expect_task_plan(result.plan, "test/cache__post")
+  inspect(post_plan.action.unwrap().kind, content="cache-save-post")
+  inspect(post_plan.action_scope, content="Some(\"test/cache\")")
+  inspect(post_plan.requires_action_started, content="true")
+  inspect(post_plan.if_condition, content="success()")
+
+  let verify_task = flow_task_by_id(result.ir, "test/verify")
+  inspect(verify_task.needs, content="[\"test/cache\"]")
+  let post_task = flow_task_by_id(result.ir, "test/cache__post")
+  inspect(post_task.needs, content="[\"test/verify\"]")
+}
+
+///|
 test "lowering: local composite action expands inner steps" {
   let workspace = prepare_local_action_workspace("lower-local-action")
   test_ensure_dir(workspace + "/.github")

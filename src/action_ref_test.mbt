@@ -85,6 +85,14 @@ test "action ref: resolve builtin cache aliases" {
 }
 
 ///|
+test "action ref: resolve builtin cache main alias" {
+  let cache = expect_resolved(resolve_action_uses("actions/cache@v4"))
+
+  inspect(cache.kind, content="cache")
+  inspect(cache.backend, content="builtin")
+}
+
+///|
 test "action ref: resolve docker image action" {
   let docker_action = expect_resolved(
     resolve_action_uses("docker://alpine:3.21"),

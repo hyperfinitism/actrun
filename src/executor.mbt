@@ -1618,47 +1618,34 @@ fn execute_save_cache_native(
 
 ///|
 #cfg(target="native")
-fn execute_restore_cache_native(
+fn cache_input_result_failure(
   plan : TaskPlan,
   workspace_root : String,
-  resolved_plan_env : Map[String, String],
+  action_name : String,
+  missing_key : Bool,
 ) -> TaskExecutionResult {
-  let key = resolved_plan_env.get("INPUT_KEY").unwrap_or("")
-  let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
-  if key.length() == 0 {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "cache-restore requires with.key",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+  let message = if missing_key {
+    action_name + " requires with.key"
+  } else {
+    action_name + " requires with.path"
   }
-  let cache_paths = split_nonempty_lines(path_input)
-  if cache_paths.length() == 0 {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "cache-restore requires with.path",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+  {
+    report: task_report_failure(plan, workspace_root, message),
+    env_updates: {},
+    path_entries: [],
+    output_values: {},
+    state_updates: {},
   }
+}
+
+///|
+#cfg(target="native")
+fn restore_cache_store_native(workspace_root : String, key : String) -> Bool? {
   let cache_root = cache_store_root(workspace_root) +
     "/" +
     sanitize_task_id(key)
   if not(@xfs.path_exists(cache_root)) {
-    return {
-      report: task_report_success(plan, workspace_root),
-      env_updates: {},
-      path_entries: [],
-      output_values: { "cache-hit": "false" },
-      state_updates: {},
-    }
+    return Some(false)
   }
   let entries = try @xfs.read_dir(cache_root) catch {
     _ => []
@@ -1680,20 +1667,38 @@ fn execute_restore_cache_native(
               workspace_root + "/" + root_entry,
             ),
           ) {
-          return {
-            report: task_report_failure(
-              plan,
-              workspace_root,
-              "failed to restore cache '\{key}'",
-            ),
-            env_updates: {},
-            path_entries: [],
-            output_values: {},
-            state_updates: {},
-          }
+          return None
         }
       }
     } else if not(exec_copy_tree(source, workspace_root + "/" + entry)) {
+      return None
+    }
+  }
+  Some(true)
+}
+
+///|
+#cfg(target="native")
+fn execute_restore_cache_native(
+  plan : TaskPlan,
+  workspace_root : String,
+  resolved_plan_env : Map[String, String],
+) -> TaskExecutionResult {
+  let key = resolved_plan_env.get("INPUT_KEY").unwrap_or("")
+  let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
+  if key.length() == 0 {
+    return cache_input_result_failure(
+      plan, workspace_root, "cache-restore", true,
+    )
+  }
+  if split_nonempty_lines(path_input).length() == 0 {
+    return cache_input_result_failure(
+      plan, workspace_root, "cache-restore", false,
+    )
+  }
+  let cache_hit = match restore_cache_store_native(workspace_root, key) {
+    Some(value) => value
+    None =>
       return {
         report: task_report_failure(
           plan,
@@ -1705,15 +1710,119 @@ fn execute_restore_cache_native(
         output_values: {},
         state_updates: {},
       }
-    }
   }
   {
     report: task_report_success(plan, workspace_root),
     env_updates: {},
     path_entries: [],
-    output_values: { "cache-hit": "true" },
+    output_values: { "cache-hit": if cache_hit { "true" } else { "false" } },
     state_updates: {},
   }
+}
+
+///|
+#cfg(target="native")
+fn execute_cache_action_native(
+  plan : TaskPlan,
+  workspace_root : String,
+  resolved_plan_env : Map[String, String],
+) -> TaskExecutionResult {
+  let key = resolved_plan_env.get("INPUT_KEY").unwrap_or("")
+  let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
+  if key.length() == 0 {
+    return cache_input_result_failure(plan, workspace_root, "cache", true)
+  }
+  if split_nonempty_lines(path_input).length() == 0 {
+    return cache_input_result_failure(plan, workspace_root, "cache", false)
+  }
+  let cache_hit = match restore_cache_store_native(workspace_root, key) {
+    Some(value) => value
+    None =>
+      return {
+        report: task_report_failure(
+          plan,
+          workspace_root,
+          "failed to restore cache '\{key}'",
+        ),
+        env_updates: {},
+        path_entries: [],
+        output_values: {},
+        state_updates: {},
+      }
+  }
+  {
+    report: task_report_success(plan, workspace_root),
+    env_updates: {},
+    path_entries: [],
+    output_values: { "cache-hit": if cache_hit { "true" } else { "" } },
+    state_updates: {
+      "CACHE_KEY": key,
+      "CACHE_PATH": path_input,
+      "CACHE_HIT": if cache_hit {
+        "true"
+      } else {
+        ""
+      },
+    },
+  }
+}
+
+///|
+#cfg(target="native")
+fn execute_cache_post_save_native(
+  plan : TaskPlan,
+  workspace_root : String,
+  resolved_plan_env : Map[String, String],
+  state : JobRuntimeState,
+) -> TaskRunReport {
+  let saved_state = action_scope_state(state, plan.action_scope)
+  if saved_state.get("CACHE_HIT").unwrap_or("") == "true" {
+    return task_report_success(plan, workspace_root)
+  }
+  let key = saved_state
+    .get("CACHE_KEY")
+    .unwrap_or(resolved_plan_env.get("INPUT_KEY").unwrap_or(""))
+  let path_input = saved_state
+    .get("CACHE_PATH")
+    .unwrap_or(resolved_plan_env.get("INPUT_PATH").unwrap_or(""))
+  return execute_save_cache_native(
+    plan,
+    workspace_root,
+    merge_runner_env(resolved_plan_env, {
+      "INPUT_KEY": key,
+      "INPUT_PATH": path_input,
+    }),
+  )
+}
+
+///|
+#cfg(target="native")
+fn execute_cache_builtin_native(
+  plan : TaskPlan,
+  workspace_root : String,
+  resolved_plan_env : Map[String, String],
+  state : JobRuntimeState,
+  action_kind : String,
+) -> TaskExecutionResult {
+  if action_kind == "cache" {
+    return execute_cache_action_native(plan, workspace_root, resolved_plan_env)
+  }
+  if action_kind == "cache-restore" {
+    return execute_restore_cache_native(plan, workspace_root, resolved_plan_env)
+  }
+  if action_kind == "cache-save" {
+    return builtin_task_result(
+      execute_save_cache_native(plan, workspace_root, resolved_plan_env),
+    )
+  }
+  if action_kind == "cache-save-post" {
+    return builtin_task_result(
+      execute_cache_post_save_native(
+        plan, workspace_root, resolved_plan_env, state,
+      ),
+    )
+  }
+  cache_input_result_failure(plan, workspace_root, action_kind, true)
 }
 
 ///|
@@ -1998,14 +2107,16 @@ async fn execute_action_plan_native(
         ),
       )
     }
-    if action.kind == "cache-save" {
-      return builtin_task_result(
-        execute_save_cache_native(plan, workspace_root, resolved_plan_env),
-      )
-    }
-    if action.kind == "cache-restore" {
-      return execute_restore_cache_native(
-        plan, workspace_root, resolved_plan_env,
+    if action.kind == "cache" ||
+      action.kind == "cache-save" ||
+      action.kind == "cache-restore" ||
+      action.kind == "cache-save-post" {
+      return execute_cache_builtin_native(
+        plan,
+        workspace_root,
+        resolved_plan_env,
+        state,
+        action.kind,
       )
     }
     return builtin_task_result(

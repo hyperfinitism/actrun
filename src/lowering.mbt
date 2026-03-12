@@ -530,6 +530,80 @@ fn github_action_context_env(action_ref : ActionRef) -> Map[String, String] {
 }
 
 ///|
+fn lower_builtin_action(
+  job : JobSpec,
+  step : StepSpec,
+  resolved_step_id : String,
+  previous_task_id : String,
+  shell : String,
+  working_directory : String,
+  env : Map[String, String],
+  action_ref : ActionRef,
+  action : ResolvedAction,
+  tasks : Array[@wf.FlowTask],
+  task_plans : Array[TaskPlan],
+  deferred_post_tasks : Array[DeferredActionTask],
+) -> String {
+  let task_id = step_task_id(job.id, resolved_step_id)
+  let needs = task_needs(job, previous_task_id)
+  if action.kind == "cache" {
+    let action_scope = task_id
+    append_action_task(
+      tasks,
+      task_plans,
+      job,
+      task_id,
+      resolved_step_id,
+      step_name(step, resolved_step_id),
+      needs,
+      shell,
+      working_directory,
+      step.if_condition,
+      env,
+      action,
+      action_scope=Some(action_scope),
+    )
+    deferred_post_tasks.push({
+      task_id: step_task_id(job.id, lifecycle_step_id(resolved_step_id, "post")),
+      step_id: lifecycle_step_id(resolved_step_id, "post"),
+      name: step_name(step, resolved_step_id) + " / post",
+      shell,
+      working_directory,
+      if_condition: "success()",
+      env,
+      action: {
+        uses: action.uses,
+        action_ref,
+        kind: "cache-save-post",
+        backend: "builtin",
+        action_path: None,
+        entrypoint: None,
+        image: None,
+        args: [],
+      },
+      action_scope: Some(action_scope),
+      requires_action_started: true,
+    })
+    return task_id
+  }
+  append_action_task(
+    tasks,
+    task_plans,
+    job,
+    task_id,
+    resolved_step_id,
+    step_name(step, resolved_step_id),
+    needs,
+    shell,
+    working_directory,
+    step.if_condition,
+    env,
+    action,
+  )
+  task_id
+}
+
+///|
 fn lower_cached_github_action(
   workflow : WorkflowSpec,
   job : JobSpec,
@@ -1172,26 +1246,23 @@ pub fn lower_push_workflow_in_workspace(
         }
         let resolved = resolve_action_ref(action_ref)
         if resolved.action is Some(action) {
-          let task_id = step_task_id(job.id, resolved_step_id)
-          let needs = task_needs(job, previous_task_id)
-          append_action_task(
-            tasks,
-            task_plans,
+          previous_task_id = lower_builtin_action(
             job,
-            task_id,
+            step,
             resolved_step_id,
-            step_name(step, resolved_step_id),
-            needs,
+            previous_task_id,
             shell,
             working_directory,
-            step.if_condition,
             merge_env(
               merge_env(step_env, action_input_env({}, step.with_values)),
               github_action_context_env(action_ref),
             ),
+            action_ref,
             action,
+            tasks,
+            task_plans,
+            deferred_post_tasks,
           )
-          previous_task_id = task_id
           step_index += 1
           continue
         }

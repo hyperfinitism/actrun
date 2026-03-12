@@ -1,0 +1,52 @@
+name: e2e-cache-auto-save
+
+on:
+  push:
+    paths:
+      - workflow.yml
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    steps:
+      - id: prepare
+        name: Prepare cache
+        shell: bash
+        run: |
+          mkdir -p cache-dir
+          printf '%s' ocean > cache-dir/value.txt
+      - id: cache
+        name: Cache
+        uses: actions/cache@v4
+        with:
+          key: compat-cache-auto-save-v1
+          path: cache-dir
+      - id: check-miss
+        name: Verify miss output
+        shell: bash
+        run: |
+          test -z "${{ steps.cache.outputs.cache-hit }}"
+
+  restore:
+    needs:
+      - save
+    runs-on: ubuntu-latest
+    steps:
+      - id: clear
+        name: Clear path
+        shell: bash
+        run: rm -rf cache-dir
+      - id: cache
+        name: Cache
+        uses: actions/cache@v4
+        with:
+          key: compat-cache-auto-save-v1
+          path: cache-dir
+      - id: build-report
+        name: Build artifact
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          printf '%s|%s' \
+            "${{ steps.cache.outputs.cache-hit }}" \
+            "$(cat cache-dir/value.txt)" > artifacts/result.txt

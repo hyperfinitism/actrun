@@ -811,6 +811,7 @@ async test "executor: builtin artifact actions upload and download files" {
 #cfg(target="native")
 async test "executor: builtin cache save and restore roundtrip across jobs" {
   let workspace = prepare_workspace("executor-builtin-cache")
+  test_support_remove_tree("_build/action_runner/cache")
 
   let workflow = new_workflow("ci", [
     new_job(
@@ -856,6 +857,71 @@ async test "executor: builtin cache save and restore roundtrip across jobs" {
   let save = expect_task_report(report, "save/save")
   inspect(save.status, content="success")
   let restore = expect_task_report(report, "restore/restore")
+  inspect(restore.status, content="success")
+  let verify = expect_task_report(report, "restore/verify")
+  inspect(verify.status, content="success")
+  inspect(verify.stdout.trim(chars=" \n\r\t").to_string(), content="true|ocean")
+}
+
+///|
+#cfg(target="native")
+async test "executor: builtin cache action auto-saves on miss and restores on next job" {
+  let workspace = prepare_workspace("executor-builtin-cache-main")
+  test_support_remove_tree("_build/action_runner/cache")
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "save",
+      [
+        new_run_step(
+          "write",
+          "mkdir -p cache-dir\nprintf '%s' ocean > cache-dir/value.txt",
+          shell=Some("bash"),
+        ),
+        new_uses_step("cache", "actions/cache@v4", with_values={
+          "key": "compat-cache-main-v1",
+          "path": "cache-dir",
+        }),
+        new_run_step(
+          "check_miss",
+          "if [ -n \"${{ steps.cache.outputs.cache-hit }}\" ]; then exit 1; fi",
+          shell=Some("bash"),
+        ),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+    new_job(
+      "restore",
+      [
+        new_run_step("clear", "rm -rf cache-dir", shell=Some("bash")),
+        new_uses_step("restore_cache", "actions/cache@v4", with_values={
+          "key": "compat-cache-main-v1",
+          "path": "cache-dir",
+        }),
+        new_run_step(
+          "verify",
+          "printf '%s|%s' \"${{ steps.restore_cache.outputs.cache-hit }}\" \"$(cat cache-dir/value.txt)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      needs=["save"],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+
+  let cache = expect_task_report(report, "save/cache")
+  inspect(cache.status, content="success")
+  let cache_post = expect_task_report(report, "save/cache__post")
+  inspect(cache_post.status, content="success")
+  let check_miss = expect_task_report(report, "save/check_miss")
+  inspect(check_miss.status, content="success")
+  let restore = expect_task_report(report, "restore/restore_cache")
   inspect(restore.status, content="success")
   let verify = expect_task_report(report, "restore/verify")
   inspect(verify.status, content="success")

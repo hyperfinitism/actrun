@@ -28,6 +28,9 @@ case "$workflow_file" in
   compat-cache-roundtrip.yml)
     report_name="compat-cache-report"
     ;;
+  compat-cache-auto-save.yml)
+    report_name="compat-cache-auto-save-report"
+    ;;
   *)
     echo "unsupported compat workflow: $workflow_file" >&2
     exit 1

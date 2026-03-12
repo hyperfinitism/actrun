@@ -8,6 +8,7 @@
 - `file-commands`: `GITHUB_ENV` / `GITHUB_OUTPUT` / `GITHUB_PATH` / `GITHUB_STEP_SUMMARY`
 - `artifact-actions-roundtrip`: `actions/upload-artifact` / `actions/download-artifact` の roundtrip
 - `cache-actions-roundtrip`: `actions/cache/save` / `actions/cache/restore` の roundtrip
+- `cache-auto-save-roundtrip`: `actions/cache` 本体の miss -> deferred save -> next job hit
 - `job-failure-blocked`: required step failure と downstream `blocked`
 - `unsupported-uses`: unsupported `uses:` を CLI error として reject
 - `unsupported-matrix`: unsupported `strategy.matrix` を CLI error として reject
