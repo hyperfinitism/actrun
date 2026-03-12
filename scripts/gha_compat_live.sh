@@ -60,9 +60,21 @@ if [ -z "$run_id" ]; then
   exit 1
 fi
 
-run_url="$(
-  gh run view "$run_id" -R "$repo" --json url --jq '.url'
-)"
+run_url=""
+for _ in $(seq 1 24); do
+  run_url="$(
+    gh run view "$run_id" -R "$repo" --json url --jq '.url' 2>/dev/null || true
+  )"
+  if [ -n "$run_url" ]; then
+    break
+  fi
+  sleep 5
+done
+
+if [ -z "$run_url" ]; then
+  echo "failed to load run url for $run_id" >&2
+  exit 1
+fi
 
 echo "watching run $run_id"
 echo "$run_url"
@@ -73,8 +85,14 @@ for _ in $(seq 1 120); do
       "$run_id" \
       -R "$repo" \
       --json status,conclusion \
-      --jq '{status: .status, conclusion: (.conclusion // "")}'
+      --jq '{status: .status, conclusion: (.conclusion // "")}' \
+      2>/dev/null || true
   )"
+  if [ -z "$status_json" ]; then
+    echo "status=pending conclusion=pending"
+    sleep 5
+    continue
+  fi
   status="$(printf '%s' "$status_json" | jq -r '.status')"
   conclusion="$(printf '%s' "$status_json" | jq -r '.conclusion')"
   echo "status=$status conclusion=${conclusion:-pending}"

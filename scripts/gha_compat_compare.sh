@@ -49,7 +49,7 @@ case "$workflow_file" in
     report_name="compat-cache-auto-save-report"
     event_added_path=".github/workflows/__compat_cache_auto_save__.trigger"
     if [ -z "$compat_key" ]; then
-      compat_key="compat-cache-auto-save-local"
+      compat_key="compat-cache-auto-save-local-$(date +%s)-$$"
     fi
     ;;
   compat-setup-node-basic.yml)
@@ -63,7 +63,7 @@ case "$workflow_file" in
     report_name="compat-setup-node-cache-npm-report"
     event_added_path=".github/workflows/__compat_setup_node_cache_npm__.trigger"
     if [ -z "$compat_key" ]; then
-      compat_key="compat-setup-node-cache-npm-local"
+      compat_key="compat-setup-node-cache-npm-local-$(date +%s)-$$"
     fi
     if [ -z "$compat_node_version" ]; then
       compat_node_version="$(node --version | sed 's/^v//')"
