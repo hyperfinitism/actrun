@@ -1363,3 +1363,27 @@ test "lowering: matrix jobs retain fail-fast metadata" {
     content="true",
   )
 }
+
+///|
+test "parser/lowering: workflow and job permissions are parsed and rejected in MVP" {
+  let workflow = new_workflow(
+    "ci",
+    [
+      new_job(
+        "build",
+        [new_run_step("show", "printf '%s' hi")],
+        permissions=Some(
+          new_permissions_spec(values={ "contents": "read", "issues": "write" }),
+        ),
+      ),
+    ],
+    permissions=Some(new_permissions_spec(values={ "_": "read-all" })),
+  )
+
+  let result = lower_push_workflow(workflow)
+
+  inspect(
+    result.errors,
+    content="[\"workflow permissions are not supported in MVP\", \"job 'build' permissions are not supported in MVP\"]",
+  )
+}

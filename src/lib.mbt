@@ -5,6 +5,18 @@ pub struct RunDefaults {
 }
 
 ///|
+pub struct PermissionsSpec {
+  values : Map[String, String]
+}
+
+///|
+pub fn new_permissions_spec(
+  values? : Map[String, String] = {},
+) -> PermissionsSpec {
+  { values, }
+}
+
+///|
 pub fn new_run_defaults(
   shell? : String? = None,
   working_directory? : String? = None,
@@ -123,6 +135,7 @@ pub struct JobSpec {
   if_condition : String
   needs : Array[String]
   outputs : Map[String, String]
+  permissions : PermissionsSpec?
   runs_on : Array[String]
   env : Map[String, String]
   defaults : RunDefaults
@@ -156,6 +169,7 @@ pub fn new_job(
   if_condition? : String = "success()",
   needs? : Array[String] = [],
   outputs? : Map[String, String] = {},
+  permissions? : PermissionsSpec? = None,
   runs_on? : Array[String] = ["ubuntu-latest"],
   env? : Map[String, String] = {},
   defaults? : RunDefaults = new_run_defaults(),
@@ -169,6 +183,7 @@ pub fn new_job(
     if_condition,
     needs,
     outputs,
+    permissions,
     runs_on,
     env,
     defaults,
@@ -183,6 +198,7 @@ pub fn new_job(
 pub struct WorkflowSpec {
   name : String
   trigger : PushTrigger
+  permissions : PermissionsSpec?
   env : Map[String, String]
   defaults : RunDefaults
   jobs : Array[JobSpec]
@@ -193,10 +209,11 @@ pub fn new_workflow(
   name : String,
   jobs : Array[JobSpec],
   trigger? : PushTrigger = new_push_trigger(),
+  permissions? : PermissionsSpec? = None,
   env? : Map[String, String] = {},
   defaults? : RunDefaults = new_run_defaults(),
 ) -> WorkflowSpec {
-  { name, trigger, env, defaults, jobs }
+  { name, trigger, permissions, env, defaults, jobs }
 }
 
 ///|

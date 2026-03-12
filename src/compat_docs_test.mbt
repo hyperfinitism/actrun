@@ -124,6 +124,32 @@ test "compat docs: lower jobs if fixture" {
 }
 
 ///|
+test "compat docs: parse and reject permissions fixture" {
+  let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
+    "permissions-parse",
+  )
+
+  inspect(fixture.id, content="docs-permissions-parse")
+  inspect(
+    workflow.permissions.unwrap().values.get("_").unwrap_or(""),
+    content="read-all",
+  )
+  inspect(
+    workflow.jobs[0]
+    .permissions
+    .unwrap()
+    .values
+    .get("contents")
+    .unwrap_or(""),
+    content="read",
+  )
+  inspect(
+    lowered.errors,
+    content="[\"workflow permissions are not supported in MVP\", \"job 'build' permissions are not supported in MVP\"]",
+  )
+}
+
+///|
 test "compat docs: lower jobs needs fixture" {
   let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
     "jobs-needs",

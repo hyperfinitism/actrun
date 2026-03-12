@@ -1780,6 +1780,29 @@ async fn run_unsupported_matrix() -> Unit {
 
 ///|
 #cfg(target="native")
+async fn run_unsupported_permissions() -> Unit {
+  let scenario = "unsupported-permissions"
+  let workspace = e2e_prepare_copied_dir(
+    "_build/e2e/workspaces",
+    scenario,
+    e2e_fixture_dir(scenario),
+  )
+  let result = e2e_run_cli([e2e_join_path(workspace, "workflow.yml")])
+  e2e_expect_fail(result, scenario)
+  e2e_expect_contains(
+    result.stdout,
+    "error: workflow permissions are not supported in MVP",
+    scenario,
+  )
+  e2e_expect_contains(
+    result.stdout,
+    "error: job 'build' permissions are not supported in MVP",
+    scenario,
+  )
+}
+
+///|
+#cfg(target="native")
 async fn run_event_cli_overrides() -> Unit {
   let scenario = "event-cli-overrides"
   let workspace = e2e_prepare_copied_dir(
@@ -3818,6 +3841,10 @@ async fn main {
   println("e2e: unsupported-matrix")
   run_unsupported_matrix()
   println("e2e: unsupported-matrix ok")
+
+  println("e2e: unsupported-permissions")
+  run_unsupported_permissions()
+  println("e2e: unsupported-permissions ok")
 
   println("e2e: event-cli-overrides")
   run_event_cli_overrides()

@@ -452,6 +452,7 @@ fn substitute_matrix_job(
     if_condition=job.if_condition,
     needs=actual_needs,
     outputs=substitute_matrix_map(job.outputs, matrix_values),
+    permissions=job.permissions,
     runs_on=substitute_matrix_list(job.runs_on, matrix_values),
     env=substitute_matrix_map(job.env, matrix_values),
     defaults=new_run_defaults(
@@ -557,6 +558,7 @@ fn expand_matrix_jobs(jobs : Array[JobSpec]) -> Array[ExpandedJob] {
             if_condition=job.if_condition,
             needs=actual_needs,
             outputs=job.outputs,
+            permissions=job.permissions,
             runs_on=job.runs_on,
             env=job.env,
             defaults=job.defaults,
@@ -1483,6 +1485,11 @@ pub fn lower_push_workflow_in_workspace(
   let entry_targets : Array[String] = []
   let seen_jobs : Map[String, Bool] = {}
   let expanded_jobs = expand_matrix_jobs(workflow.jobs)
+  match workflow.permissions {
+    Some(spec) if spec.values.length() > 0 =>
+      errors.push("workflow permissions are not supported in MVP")
+    _ => ()
+  }
   let expanded_specs : Array[JobSpec] = []
   for expanded in expanded_jobs {
     expanded_specs.push(expanded.job)
@@ -1520,6 +1527,11 @@ pub fn lower_push_workflow_in_workspace(
       errors.push(
         "job '\{job.id}' reusable workflow is not supported in MVP: \{path}",
       )
+    }
+    match job.permissions {
+      Some(spec) if spec.values.length() > 0 =>
+        errors.push("job '\{job.id}' permissions are not supported in MVP")
+      _ => ()
     }
     if job.container_image is Some(image) {
       errors.push("job '\{job.id}' container is not supported in MVP: \{image}")

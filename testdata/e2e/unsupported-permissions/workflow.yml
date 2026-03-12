@@ -1,0 +1,11 @@
+name: unsupported-permissions
+on: push
+permissions: read-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - id: show
+        run: printf '%s' hi

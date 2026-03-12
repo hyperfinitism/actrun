@@ -831,6 +831,25 @@ fn parse_run_defaults(
 }
 
 ///|
+fn parse_permissions(
+  value : YamlValue?,
+  errors : Array[String],
+  ctx : String,
+) -> PermissionsSpec? {
+  match value {
+    None => None
+    Some(Str(text)) => Some(new_permissions_spec(values={ "_": text }))
+    Some(Obj(fields)) =>
+      Some(new_permissions_spec(values=yaml_to_string_map(Some(Obj(fields)), errors, ctx)))
+    Some(Null) => None
+    Some(_) => {
+      errors.push(ctx + " must be a string or mapping")
+      None
+    }
+  }
+}
+
+///|
 fn parse_push_trigger_value(
   value : YamlValue,
   errors : Array[String],
@@ -1036,6 +1055,11 @@ fn parse_job(id : String, value : YamlValue, errors : Array[String]) -> JobSpec 
       yaml_obj_get(fields, "outputs"),
       errors,
       ctx + ".outputs",
+    ),
+    permissions=parse_permissions(
+      yaml_obj_get(fields, "permissions"),
+      errors,
+      ctx + ".permissions",
     ),
     runs_on=yaml_as_string_list(
       yaml_obj_get(fields, "runs-on"),
@@ -1301,6 +1325,11 @@ pub fn parse_workflow_yaml(text : String) -> WorkflowParseResult {
     ),
     jobs,
     trigger=parse_trigger(yaml_obj_get(root_fields, "on"), errors),
+    permissions=parse_permissions(
+      yaml_obj_get(root_fields, "permissions"),
+      errors,
+      "permissions",
+    ),
     env=yaml_to_string_map(yaml_obj_get(root_fields, "env"), errors, "env"),
     defaults=parse_run_defaults(
       yaml_obj_get(root_fields, "defaults"),

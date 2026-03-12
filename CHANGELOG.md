@@ -13,6 +13,8 @@
 - docs/E2E coverage for `${{ vars.* }}` in script/env and step `if:`
 - minimal `${{ secrets.* }}` support backed by `ACTION_RUNNER_SECRET_<NAME>`
 - docs/E2E coverage for `${{ secrets.* }}` in script/env
+- workflow/job `permissions` parse + contract support with explicit lowering reject in MVP
+- docs/E2E coverage for unsupported `permissions`
 
 - `push` trigger matcher for MVP CI workflows
 - workflow YAML subset parser for `on.push`, `jobs`, `steps`, `env`, and `defaults.run`

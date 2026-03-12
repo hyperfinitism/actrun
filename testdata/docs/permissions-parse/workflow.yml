@@ -1,0 +1,12 @@
+name: permissions-parse
+'on': push
+permissions: read-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - id: show
+        run: printf '%s' hi
