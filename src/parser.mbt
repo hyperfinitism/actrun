@@ -618,6 +618,62 @@ fn matrix_row_matches(
 }
 
 ///|
+fn matrix_row_merge(
+  base : Map[String, String],
+  overlay : Map[String, String],
+) -> Map[String, String] {
+  let merged : Map[String, String] = {}
+  for key, value in base {
+    merged[key] = value
+  }
+  for key, value in overlay {
+    merged[key] = value
+  }
+  merged
+}
+
+///|
+fn matrix_include_matches_original(
+  original_row : Map[String, String],
+  include_row : Map[String, String],
+) -> Bool {
+  for key, value in include_row {
+    match original_row.get(key) {
+      Some(actual) if actual == value => ()
+      Some(_) => return false
+      None => ()
+    }
+  }
+  true
+}
+
+///|
+fn expand_matrix_includes(
+  original_rows : Array[Map[String, String]],
+  include_rows : Array[Map[String, String]],
+) -> Array[Map[String, String]] {
+  let expanded : Array[Map[String, String]] = []
+  for row in original_rows {
+    expanded.push(matrix_row_merge({}, row))
+  }
+  for include_row in include_rows {
+    let mut matched = false
+    let mut row_index = 0
+    while row_index < original_rows.length() {
+      if matrix_include_matches_original(original_rows[row_index], include_row) {
+        expanded[row_index] = matrix_row_merge(expanded[row_index], include_row)
+        matched = true
+      }
+      row_index += 1
+    }
+    if not(matched) {
+      expanded.push(matrix_row_merge({}, include_row))
+    }
+  }
+  expanded
+}
+
+///|
 fn filter_matrix_excludes(
   rows : Array[Map[String, String]],
   excludes : Array[Map[String, String]],
@@ -688,18 +744,16 @@ fn parse_job_matrix(
         errors.push(ctx + ".matrix." + field.key + " must be a string or list")
     }
   }
-  if axes.length() > 0 && include_rows.length() > 0 {
-    errors.push(ctx + ".matrix include with axes is not supported in P0")
-    return None
-  }
   let mut rows : Array[Map[String, String]] = []
   if axes.length() > 0 {
     let current : Map[String, String] = {}
     matrix_product_rows(axes, 0, current, rows)
+    rows = filter_matrix_excludes(rows, exclude_rows)
+    rows = expand_matrix_includes(rows, include_rows)
   } else {
     rows = include_rows
+    rows = filter_matrix_excludes(rows, exclude_rows)
   }
-  rows = filter_matrix_excludes(rows, exclude_rows)
   if rows.length() == 0 {
     errors.push(ctx + ".matrix must define at least one row")
     return None

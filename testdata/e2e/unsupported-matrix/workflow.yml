@@ -6,9 +6,9 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-        include:
-          - os: ubuntu-latest
-            target: native
+    outputs:
+      value: ${{ steps.emit.outputs.value }}
     runs-on: ubuntu-latest
     steps:
-      - run: printf '%s' 'nope'
+      - id: emit
+        run: printf '%s=%s\n' value nope >> "$GITHUB_OUTPUT"

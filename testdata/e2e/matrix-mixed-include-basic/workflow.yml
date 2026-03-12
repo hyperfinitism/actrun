@@ -1,0 +1,24 @@
+name: e2e-matrix-mixed-include
+'on':
+  push:
+    paths:
+      - workflow.yml
+jobs:
+  build:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        include:
+          - target: native
+          - os: ubuntu-latest
+            target: js
+          - os: windows-latest
+            target: js
+    runs-on: ${{ matrix.os }}
+    steps:
+      - id: emit
+        run: |
+          mkdir -p artifacts
+          printf '%s|%s' '${{ matrix.os }}' '${{ matrix.target }}' > artifacts/${{ matrix.os }}-${{ matrix.target }}.txt

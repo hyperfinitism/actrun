@@ -1,0 +1,19 @@
+name: ci-matrix-mixed-include
+on: push
+jobs:
+  build:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        include:
+          - target: native
+          - os: ubuntu-latest
+            target: js
+          - os: windows-latest
+            target: js
+    runs-on: ${{ matrix.os }}
+    steps:
+      - id: show
+        run: printf '%s|%s' '${{ matrix.os }}' '${{ matrix.target }}'

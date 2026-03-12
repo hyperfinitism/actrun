@@ -265,7 +265,7 @@ test "parser: parse matrix exclude rows" {
 }
 
 ///|
-test "parser: reject mixed matrix axes and include in P0" {
+test "parser: parse mixed matrix axes and include rows" {
   let src =
     #|name: ci
     #|on: push
@@ -277,14 +277,23 @@ test "parser: reject mixed matrix axes and include in P0" {
     #|        include:
     #|          - os: ubuntu-latest
     #|            target: native
+    #|          - os: windows-latest
+    #|            target: js
     #|    runs-on: ubuntu-latest
     #|    steps:
     #|      - run: printf '%s' ok
   let parsed = parse_workflow_yaml(src)
+  let workflow = expect_workflow(parsed)
 
+  inspect(parsed.errors, content="[]")
+  inspect(workflow.jobs[0].matrix.unwrap().rows.length(), content="2")
   inspect(
-    parsed.errors,
-    content="[\"jobs.build.strategy.matrix include with axes is not supported in P0\"]",
+    workflow.jobs[0].matrix.unwrap().rows[0].get("target").unwrap_or(""),
+    content="native",
+  )
+  inspect(
+    workflow.jobs[0].matrix.unwrap().rows[1].get("os").unwrap_or(""),
+    content="windows-latest",
   )
 }
 
