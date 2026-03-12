@@ -29,7 +29,9 @@ pub fn materialize_bit_push_workspace(&@types.FileSystem, &@types.RepoFileSystem
 
 pub fn materialize_bit_push_workspace_native(String, PushEvent, String, remote_url? : String) -> BitWorkspaceResult
 
-pub fn new_job(String, Array[StepSpec], name? : String, needs? : Array[String], outputs? : Map[String, String], runs_on? : Array[String], env? : Map[String, String], defaults? : RunDefaults, matrix_enabled? : Bool, reusable_workflow? : String?, container_image? : String?) -> JobSpec
+pub fn new_job(String, Array[StepSpec], name? : String, needs? : Array[String], outputs? : Map[String, String], runs_on? : Array[String], env? : Map[String, String], defaults? : RunDefaults, matrix? : JobMatrixSpec?, reusable_workflow? : String?, container_image? : String?) -> JobSpec
+
+pub fn new_job_matrix(Array[Map[String, String]], fail_fast? : Bool) -> JobMatrixSpec
 
 pub fn new_local_action(Array[StepSpec], name? : String, inputs? : Map[String, String]) -> LocalActionSpec
 
@@ -113,6 +115,11 @@ pub struct GitHubActionPrefetchResult {
   errors : Array[String]
 }
 
+pub struct JobMatrixSpec {
+  rows : Array[Map[String, String]]
+  fail_fast : Bool
+}
+
 pub struct JobSpec {
   id : String
   name : String
@@ -122,7 +129,7 @@ pub struct JobSpec {
   env : Map[String, String]
   defaults : RunDefaults
   steps : Array[StepSpec]
-  matrix_enabled : Bool
+  matrix : JobMatrixSpec?
   reusable_workflow : String?
   container_image : String?
 }

@@ -598,7 +598,10 @@ async test "executor: checkout supports path and sparse-checkout" {
   inspect(checkout.status, content="success")
   let verify = expect_task_report(report, "build/verify")
   inspect(verify.status, content="success")
-  inspect(verify.stdout.trim(chars=" \n\r\t").to_string(), content="yes|yes|yes")
+  inspect(
+    verify.stdout.trim(chars=" \n\r\t").to_string(),
+    content="yes|yes|yes",
+  )
 }
 
 ///|

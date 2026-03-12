@@ -121,9 +121,23 @@ pub struct JobSpec {
   env : Map[String, String]
   defaults : RunDefaults
   steps : Array[StepSpec]
-  matrix_enabled : Bool
+  matrix : JobMatrixSpec?
   reusable_workflow : String?
   container_image : String?
+}
+
+///|
+pub struct JobMatrixSpec {
+  rows : Array[Map[String, String]]
+  fail_fast : Bool
+}
+
+///|
+pub fn new_job_matrix(
+  rows : Array[Map[String, String]],
+  fail_fast? : Bool = true,
+) -> JobMatrixSpec {
+  { rows, fail_fast }
 }
 
 ///|
@@ -136,7 +150,7 @@ pub fn new_job(
   runs_on? : Array[String] = ["ubuntu-latest"],
   env? : Map[String, String] = {},
   defaults? : RunDefaults = new_run_defaults(),
-  matrix_enabled? : Bool = false,
+  matrix? : JobMatrixSpec? = None,
   reusable_workflow? : String? = None,
   container_image? : String? = None,
 ) -> JobSpec {
@@ -149,7 +163,7 @@ pub fn new_job(
     env,
     defaults,
     steps,
-    matrix_enabled,
+    matrix,
     reusable_workflow,
     container_image,
   }

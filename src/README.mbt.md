@@ -83,9 +83,9 @@ test {
 
 ## MVP 非対応
 
-- `${{ ... }}` の広い context (`github` / `runner` の残り, `needs`, matrix など)
+- `${{ ... }}` の広い context (`github` / `runner` の残り, matrix advanced, `vars`, `secrets` など)
 - `pwsh` binary が存在しない環境での PowerShell workflow 実行
-- `matrix`
+- `matrix.exclude` / mixed `axes + include` / matrix outputs / matrix `needs` semantics
 - reusable workflow
 - job container / services
 - step `if` の `success()` 以外

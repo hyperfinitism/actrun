@@ -64,6 +64,11 @@ fn lifecycle_step_id(step_id : String, phase : String) -> String {
 }
 
 ///|
+priv struct ExpandedJob {
+  job : JobSpec
+}
+
+///|
 fn job_id_set(jobs : Array[JobSpec]) -> Map[String, Bool] {
   let seen : Map[String, Bool] = {}
   for job in jobs {
@@ -73,11 +78,11 @@ fn job_id_set(jobs : Array[JobSpec]) -> Map[String, Bool] {
 }
 
 ///|
-fn workflow_parallelism(jobs : Array[JobSpec]) -> Int {
-  if jobs.length() == 0 {
+fn workflow_parallelism(job_count : Int) -> Int {
+  if job_count == 0 {
     1
   } else {
-    jobs.length()
+    job_count
   }
 }
 
@@ -251,6 +256,16 @@ fn input_expr_name(expression : String) -> String? {
 }
 
 ///|
+fn matrix_expr_name(expression : String) -> String? {
+  let trimmed = expression.trim(chars=" \t\n\r").to_string()
+  if trimmed.has_prefix("matrix.") && trimmed.length() > 7 {
+    Some(text_slice(trimmed, 7, trimmed.length()))
+  } else {
+    None
+  }
+}
+
+///|
 fn substitute_inputs_text(
   text : String,
   inputs : Map[String, String],
@@ -286,12 +301,58 @@ fn substitute_inputs_text(
 }
 
 ///|
+fn substitute_matrix_text(
+  text : String,
+  matrix_values : Map[String, String],
+) -> String {
+  let chunks : Array[String] = []
+  let mut idx = 0
+  while idx < text.length() {
+    match find_substring(text, "${{", idx) {
+      Some(open_idx) => {
+        chunks.push(text_slice(text, idx, open_idx))
+        match find_substring(text, "}}", open_idx + 3) {
+          Some(close_idx) => {
+            let expression = text_slice(text, open_idx + 3, close_idx)
+            match matrix_expr_name(expression) {
+              Some(name) => chunks.push(matrix_values.get(name).unwrap_or(""))
+              None => chunks.push(text_slice(text, open_idx, close_idx + 2))
+            }
+            idx = close_idx + 2
+          }
+          None => {
+            chunks.push(text_slice(text, open_idx, text.length()))
+            idx = text.length()
+          }
+        }
+      }
+      None => {
+        chunks.push(text_slice(text, idx, text.length()))
+        idx = text.length()
+      }
+    }
+  }
+  chunks.join("")
+}
+
+///|
 fn substitute_optional_inputs(
   value : String?,
   inputs : Map[String, String],
 ) -> String? {
   match value {
     Some(text) => Some(substitute_inputs_text(text, inputs))
+    None => None
+  }
+}
+
+///|
+fn substitute_optional_matrix(
+  value : String?,
+  matrix_values : Map[String, String],
+) -> String? {
+  match value {
+    Some(text) => Some(substitute_matrix_text(text, matrix_values))
     None => None
   }
 }
@@ -309,6 +370,18 @@ fn substitute_inputs_map(
 }
 
 ///|
+fn substitute_matrix_map(
+  values : Map[String, String],
+  matrix_values : Map[String, String],
+) -> Map[String, String] {
+  let result : Map[String, String] = {}
+  for key, value in values {
+    result[key] = substitute_matrix_text(value, matrix_values)
+  }
+  result
+}
+
+///|
 fn substitute_inputs_list(
   values : Array[String],
   inputs : Map[String, String],
@@ -318,6 +391,130 @@ fn substitute_inputs_list(
     result.push(substitute_inputs_text(value, inputs))
   }
   result
+}
+
+///|
+fn substitute_matrix_list(
+  values : Array[String],
+  matrix_values : Map[String, String],
+) -> Array[String] {
+  let result : Array[String] = []
+  for value in values {
+    result.push(substitute_matrix_text(value, matrix_values))
+  }
+  result
+}
+
+///|
+fn substitute_matrix_step(
+  step : StepSpec,
+  matrix_values : Map[String, String],
+) -> StepSpec {
+  {
+    id: step.id,
+    name: substitute_matrix_text(step.name, matrix_values),
+    run: substitute_optional_matrix(step.run, matrix_values),
+    uses: substitute_optional_matrix(step.uses, matrix_values),
+    shell: substitute_optional_matrix(step.shell, matrix_values),
+    working_directory: substitute_optional_matrix(
+      step.working_directory,
+      matrix_values,
+    ),
+    env: substitute_matrix_map(step.env, matrix_values),
+    with_values: substitute_matrix_map(step.with_values, matrix_values),
+    if_condition: substitute_matrix_text(step.if_condition, matrix_values),
+  }
+}
+
+///|
+fn substitute_matrix_job(
+  job : JobSpec,
+  actual_id : String,
+  matrix_values : Map[String, String],
+) -> JobSpec {
+  let steps : Array[StepSpec] = []
+  for step in job.steps {
+    steps.push(substitute_matrix_step(step, matrix_values))
+  }
+  new_job(
+    actual_id,
+    steps,
+    name=substitute_matrix_text(job.name, matrix_values),
+    needs=job.needs,
+    outputs=substitute_matrix_map(job.outputs, matrix_values),
+    runs_on=substitute_matrix_list(job.runs_on, matrix_values),
+    env=substitute_matrix_map(job.env, matrix_values),
+    defaults=new_run_defaults(
+      shell=substitute_optional_matrix(job.defaults.shell, matrix_values),
+      working_directory=substitute_optional_matrix(
+        job.defaults.working_directory,
+        matrix_values,
+      ),
+    ),
+    matrix=None,
+    reusable_workflow=substitute_optional_matrix(
+      job.reusable_workflow,
+      matrix_values,
+    ),
+    container_image=substitute_optional_matrix(
+      job.container_image,
+      matrix_values,
+    ),
+  )
+}
+
+///|
+fn matrix_job_id(logical_id : String, index : Int) -> String {
+  logical_id + "__matrix_" + (index + 1).to_string()
+}
+
+///|
+fn expand_matrix_jobs(
+  jobs : Array[JobSpec],
+  errors : Array[String],
+) -> Array[ExpandedJob] {
+  let expanded : Array[ExpandedJob] = []
+  let matrix_job_ids : Map[String, Bool] = {}
+  for job in jobs {
+    if job.matrix is Some(_) {
+      matrix_job_ids[job.id] = true
+    }
+  }
+  for job in jobs {
+    let mut invalid = false
+    for need in job.needs {
+      if matrix_job_ids.get(need) is Some(_) {
+        errors.push(
+          "job '\{job.id}' needs matrix job '\{need}' is not supported in P0",
+        )
+        invalid = true
+      }
+    }
+    if invalid {
+      continue
+    }
+    match job.matrix {
+      Some(matrix) => {
+        if job.outputs.length() > 0 {
+          errors.push("job '\{job.id}' matrix outputs are not supported in P0")
+          continue
+        }
+        let mut row_index = 0
+        for row in matrix.rows {
+          expanded.push({
+            job: substitute_matrix_job(
+              job,
+              matrix_job_id(job.id, row_index),
+              row,
+            ),
+          })
+          row_index += 1
+        }
+      }
+      None => expanded.push({ job, })
+    }
+  }
+  expanded
 }
 
 ///|
@@ -1164,9 +1361,15 @@ pub fn lower_push_workflow_in_workspace(
   let job_needs : Map[String, Array[String]] = {}
   let entry_targets : Array[String] = []
   let seen_jobs : Map[String, Bool] = {}
-  let known_jobs = job_id_set(workflow.jobs)
+  let expanded_jobs = expand_matrix_jobs(workflow.jobs, errors)
+  let expanded_specs : Array[JobSpec] = []
+  for expanded in expanded_jobs {
+    expanded_specs.push(expanded.job)
+  }
+  let known_jobs = job_id_set(expanded_specs)
 
-  for job in workflow.jobs {
+  for expanded in expanded_jobs {
+    let job = expanded.job
     if job.id.length() == 0 {
       errors.push("job id is empty")
       continue
@@ -1179,12 +1382,10 @@ pub fn lower_push_workflow_in_workspace(
     nodes.push(@wf.new_node(job.id, job.needs))
   }
 
-  for job in workflow.jobs {
+  for expanded in expanded_jobs {
+    let job = expanded.job
     job_outputs[job.id] = job.outputs
     job_needs[job.id] = job.needs
-    if job.matrix_enabled {
-      errors.push("job '\{job.id}' matrix is not supported in MVP")
-    }
     if job.reusable_workflow is Some(path) {
       errors.push(
         "job '\{job.id}' reusable workflow is not supported in MVP: \{path}",
@@ -1346,7 +1547,7 @@ pub fn lower_push_workflow_in_workspace(
     nodes,
     tasks,
     entry_targets~,
-    max_parallel=workflow_parallelism(workflow.jobs),
+    max_parallel=workflow_parallelism(expanded_jobs.length()),
   )
   for issue in @wf.ir_issues(ir) {
     errors.push(issue)

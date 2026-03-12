@@ -1399,9 +1399,7 @@ fn checkout_sparse_match(
   is_dir : Bool,
   cone_mode : Bool,
 ) -> Bool {
-  if cone_mode &&
-    not(is_dir) &&
-    not(relative_path.contains("/")) {
+  if cone_mode && not(is_dir) && not(relative_path.contains("/")) {
     return true
   }
   for raw_pattern in patterns {
@@ -1617,10 +1615,7 @@ fn execute_builtin_checkout_native(
   if sparse_patterns.length() > 0 &&
     not(
       exec_prune_sparse_checkout(
-        checkout_root,
-        checkout_root,
-        sparse_patterns,
-        cone_mode,
+        checkout_root, checkout_root, sparse_patterns, cone_mode,
       ),
     ) {
     return task_report_failure(

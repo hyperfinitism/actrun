@@ -1,7 +1,7 @@
 # TODO
 
-`action_runner` の次段階は、機能追加より先に compat test を増やして挙動を固定する。
-方針は `探索 -> Red -> Green -> Refactoring` を維持し、まず GitHub Docs から読める範囲を black-box test に落とす。
+compat fixture 基盤と GitHub-hosted live compat の導線は一通り入った。
+次は「実 workflow の通過率をどれだけ上げるか」を基準に優先度を組み直して、`探索 -> Red -> Green -> Refactoring` で進める。
 
 ## 原則
 
@@ -9,7 +9,7 @@
 - [ ] parser / expression の補助 fixture は `actions/languageservices` を使う
 - [ ] runtime 挙動の補助 fixture は `nektos/act` を使う
 - [ ] unsupported は黙って無視せず、明示的な reject test にする
-- [ ] 取り込む fixture には upstream URL と採用理由をコメントで残す
+- [ ] 取り込む fixture には upstream URL と採用理由を metadata / README に残す
 
 ## Source of Truth
 
@@ -22,93 +22,74 @@
 - `expressions/testdata`: https://github.com/actions/languageservices/tree/main/expressions/testdata
 - `nektos/act` runner testdata: https://github.com/nektos/act/tree/master/pkg/runner/testdata
 
-## P0: テスト基盤
+## 既にできていること
 
-- [x] `testdata/docs/` を作り、docs 由来 workflow fixture の置き場を決める
-- [x] `testdata/upstream/act/` を作り、移植した fixture の置き場を決める
-- [x] `testdata/upstream/languageservices/` を作り、parser / expression fixture の置き場を決める
-- [x] 1 workflow = 1 black-box test の loader を作る
-- [x] `supported`, `unsupported`, `known_diff` を表現できる test metadata を決める
-- [ ] upstream URL, 採用日, 期待結果を残す README を testdata 配下に置く
+- [x] docs / languageservices / act fixture の compat test 基盤
+- [x] live compat artifact compare (`gha-compat-live`, `gha-compat-compare`)
+- [x] `checkout`, `artifact`, `cache`, local/remote action lifecycle の MVP
+- [x] `strategy.matrix` の P0 最小 slice
+  - axes-only と include-only の展開
+  - `${{ matrix.* }}` の `runs-on` / `run` / `env` / `with` / shell / cwd 置換
+  - docs fixture と E2E 追加
 
-## P1: Docs から先にテスト化する
+## P0: 実 workflow 通過率を先に上げる
 
-### Workflow Syntax
+- [x] `strategy.matrix` の最小対応
+- [ ] `strategy.matrix.exclude`
+- [ ] `strategy.matrix` の axes + include 混在
+- [ ] `strategy.matrix.fail-fast` の実行意味論
+- [ ] `strategy.matrix.max-parallel`
+- [ ] matrix job に対する `needs` / `needs.<job>.result` / `needs.<job>.outputs.*`
+- [ ] matrix job outputs の意味論
+- [ ] job-level `if:`
+- [ ] step-level `if:` の `always()` / `failure()` / `cancelled()`
+- [ ] `continue-on-error`
+- [ ] `steps.<id>.outcome` / `steps.<id>.conclusion`
+- [ ] `actions/checkout` の `fetch-depth`
+- [ ] `actions/checkout` の `ref`
+- [ ] `actions/checkout` の `clean`
+- [ ] `actions/checkout` の `submodules`
+- [ ] `actions/setup-node` の最小 builtin
+  - `node-version`
+  - `cache`
+  - `registry-url`
 
-- [x] `on: push` の scalar / array / object form
-- [x] `on.push.branches`
-- [x] `on.push.branches-ignore`
-- [x] `on.push.paths`
-- [x] `on.push.paths-ignore`
-- [x] workflow / job / step の `env` 優先順位
-- [x] `defaults.run.shell`
-- [x] `defaults.run.working-directory`
-- [x] `jobs.<job_id>.needs`
-- [x] `jobs.<job_id>.steps[*].id`
-- [x] `jobs.<job_id>.steps[*].run`
-- [x] `jobs.<job_id>.steps[*].uses`
-- [x] `jobs.<job_id>.steps[*].shell`
-- [x] `jobs.<job_id>.steps[*].working-directory`
-- [x] `jobs.<job_id>.steps[*].env`
-- [x] `jobs.<job_id>.steps[*].with`
+## P1: expressions / builtins の互換率を上げる
 
-### Contexts / Expressions
+- [ ] expression function の最小 subset
+  - `contains`
+  - `startsWith`
+  - `endsWith`
+  - `fromJSON`
+  - `toJSON`
+  - `hashFiles`
+- [ ] `${{ vars.* }}` の最小対応
+- [ ] `${{ secrets.* }}` の最小対応
+- [ ] `permissions` の parse / contract / reject policy 明確化
+- [ ] `actions/cache` の拡張
+  - `restore-keys`
+  - `lookup-only`
+  - `fail-on-cache-miss`
+- [ ] `actions/upload-artifact` / `actions/download-artifact` の拡張
+  - glob / directory
+  - `if-no-files-found`
+  - `overwrite`
+  - `merge-multiple`
 
-- [x] `${{ env.NAME }}` の step script 利用
-- [x] `${{ env.NAME }}` の step `env:` 利用
-- [x] `${{ steps.<id>.outputs.<name> }}` の後続 step 利用
-- [x] workflow / job / step で同名 env があるときの「より具体的な値が勝つ」ケース
-- [x] 未定義 `env.*` / `steps.*.outputs.*` の期待挙動を docs と照合して固定する
+## P2: workflow 構成要素を広げる
 
-### Workflow Commands
+- [ ] reusable workflow (`workflow_call`)
+- [ ] workflow inputs / outputs
+- [ ] job container
+- [ ] services
+- [ ] concurrency の parse / contract / reject policy 明確化
 
-- [x] `GITHUB_ENV` の single-line
-- [x] `GITHUB_ENV` の multiline delimiter
-- [x] `GITHUB_OUTPUT` の single-line
-- [x] `GITHUB_OUTPUT` の multiline delimiter
-- [x] `GITHUB_PATH` が「後続 step にだけ」効くこと
-- [x] `GITHUB_STEP_SUMMARY` の summary 内容を docs fixture で固定する
-- [x] top-level `run` step の `GITHUB_STATE` は未対応として reject test を先に置く
+## P3: runner 独自価値
 
-## P2: `actions/languageservices` fixture を取り込む
-
-- [x] `workflow-parser/testdata/reader` から、現在の MVP 範囲に収まるケースを選定する
-- [x] parser success case を `src/lib_test.mbt` か専用 compat test に移す
-- [x] parser error case を「unsupported error を返す」形に合わせて移植する
-- [x] `expressions/testdata` から `env` / `steps` に関係する最小 subset を移植する
-- [x] languageservices と解釈がズレるものは `known_diff` として記録する
-
-## P3: `nektos/act` fixture を移植する
-
-- [x] `set-env-new-env-file-per-step`
-  - source: https://raw.githubusercontent.com/nektos/act/master/pkg/runner/testdata/set-env-new-env-file-per-step/push.yml
-- [x] `set-env-step-env-override`
-  - source: https://github.com/nektos/act/tree/master/pkg/runner/testdata/set-env-step-env-override
-- [x] `steps-context`
-  - source: https://github.com/nektos/act/tree/master/pkg/runner/testdata/steps-context
-- [x] `shells`
-  - source: https://github.com/nektos/act/tree/master/pkg/runner/testdata/shells
-- [x] `stepsummary`
-  - source: https://github.com/nektos/act/tree/master/pkg/runner/testdata/stepsummary
-- [x] 移植時に `bit` / `bitflow` 非依存の black-box test に正規化する
-- [x] `act` 固有実装に引っ張られないよう、期待値は GitHub Docs と突き合わせる
-
-## P4: テスト駆動で実装を広げる
-
-- [x] `GITHUB_STEP_SUMMARY`
-- [x] local composite action scope に閉じた最小 `GITHUB_STATE`
-- [x] action lifecycle (`pre` / `main` / `post`) を含む完全な `GITHUB_STATE`
-- [x] GitHub repo `node*` action の `pre` / `main` / `post` lifecycle
-- [x] Docker action の `pre-entrypoint` / `post-entrypoint` lifecycle
-- [x] `github.*` context の最小 subset
-- [x] direct dependency に対する `needs.<job>.outputs.*` / `needs.<job>.result`
-- [x] `runner.*` context の最小 subset
-- [x] shell 差分の吸収 (`bash`, `sh`, `pwsh`)
-- [x] local composite action 内の nested `uses`
-- [x] cache 済み GitHub repo composite action の metadata 解決
-- [x] GitHub repo action の remote fetch / cache fill
-- [x] GitHub repo action の `node*` backend 実行
-- [x] GitHub repo action の `docker` backend 実行
+- [ ] Wasm backend contract
+- [ ] Wasm runner adapter
+- [ ] backend capability model (`host` / `docker` / `wasm`)
+- [ ] custom registry action の backend 解決強化
 
 ## 完了条件
 

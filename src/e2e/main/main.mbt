@@ -783,6 +783,37 @@ async fn run_checkout_sparse_path() -> Unit {
 
 ///|
 #cfg(target="native")
+async fn run_matrix_include_basic() -> Unit {
+  let scenario = "matrix-include-basic"
+  let workspace = e2e_prepare_copied_dir(
+    "_build/e2e/workspaces",
+    scenario,
+    e2e_fixture_dir(scenario),
+  )
+  let result = e2e_run_cli([
+    e2e_join_path(workspace, "workflow.yml"),
+    "--event",
+    e2e_join_path(workspace, "event.json"),
+  ])
+  e2e_expect_ok(result, scenario)
+  e2e_expect_contains(result.stdout, "workflow=e2e-matrix-include", scenario)
+  e2e_expect_contains(result.stdout, "state=completed", scenario)
+  e2e_expect_contains(result.stdout, "build__matrix_1/emit: success", scenario)
+  e2e_expect_contains(result.stdout, "build__matrix_2/emit: success", scenario)
+  e2e_expect_eq(
+    e2e_read_text(e2e_join_path(workspace, "artifacts/native.txt")),
+    "native",
+    scenario + " native artifact",
+  )
+  e2e_expect_eq(
+    e2e_read_text(e2e_join_path(workspace, "artifacts/js.txt")),
+    "js",
+    scenario + " js artifact",
+  )
+}
+
+///|
+#cfg(target="native")
 async fn run_job_failure_blocked() -> Unit {
   let scenario = "job-failure-blocked"
   let workspace = e2e_prepare_copied_dir(
@@ -833,7 +864,7 @@ async fn run_unsupported_matrix() -> Unit {
   e2e_expect_fail(result, scenario)
   e2e_expect_contains(
     result.stdout,
-    "error: job 'build' matrix is not supported in MVP",
+    "error: jobs.build.strategy.matrix.exclude is not supported in P0",
     scenario,
   )
 }
@@ -2782,6 +2813,10 @@ async fn main {
   println("e2e: checkout-sparse-path")
   run_checkout_sparse_path()
   println("e2e: checkout-sparse-path ok")
+
+  println("e2e: matrix-include-basic")
+  run_matrix_include_basic()
+  println("e2e: matrix-include-basic ok")
 
   println("e2e: job-failure-blocked")
   run_job_failure_blocked()

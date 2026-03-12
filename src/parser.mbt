@@ -523,6 +523,157 @@ fn yaml_to_string_map(
 }
 
 ///|
+fn yaml_as_optional_bool(
+  value : YamlValue?,
+  errors : Array[String],
+  ctx : String,
+) -> Bool? {
+  match value {
+    Some(Str(text)) => {
+      let normalized = text.trim(chars=" \t\r\n").to_lower()
+      if normalized == "true" {
+        Some(true)
+      } else if normalized == "false" {
+        Some(false)
+      } else {
+        errors.push(ctx + " must be true or false")
+        None
+      }
+    }
+    Some(Null) => None
+    Some(_) => {
+      errors.push(ctx + " must be a boolean")
+      None
+    }
+    None => None
+  }
+}
+
+///|
+fn yaml_as_string_map_list(
+  value : YamlValue?,
+  errors : Array[String],
+  ctx : String,
+) -> Array[Map[String, String]] {
+  let result : Array[Map[String, String]] = []
+  guard value is Some(actual) else { return result }
+  match actual {
+    Seq(items) => {
+      let mut idx = 0
+      while idx < items.length() {
+        result.push(
+          yaml_to_string_map(
+            Some(items[idx]),
+            errors,
+            ctx + "[" + idx.to_string() + "]",
+          ),
+        )
+        idx += 1
+      }
+    }
+    Null => ()
+    _ => errors.push(ctx + " must be a list")
+  }
+  result
+}
+
+///|
+fn matrix_product_rows(
+  axes : Array[(String, Array[String])],
+  idx : Int,
+  current : Map[String, String],
+  rows : Array[Map[String, String]],
+) -> Unit {
+  if idx >= axes.length() {
+    let row : Map[String, String] = {}
+    for key, value in current {
+      row[key] = value
+    }
+    rows.push(row)
+    return
+  }
+  let (key, values) = axes[idx]
+  for value in values {
+    let next : Map[String, String] = {}
+    for existing_key, existing_value in current {
+      next[existing_key] = existing_value
+    }
+    next[key] = value
+    matrix_product_rows(axes, idx + 1, next, rows)
+  }
+}
+
+///|
+fn parse_job_matrix(
+  strategy_value : YamlValue?,
+  errors : Array[String],
+  ctx : String,
+) -> JobMatrixSpec? {
+  guard strategy_value is Some(actual_strategy) else { return None }
+  let strategy_fields = yaml_as_obj(actual_strategy, errors, ctx)
+  let matrix_value = yaml_obj_get(strategy_fields, "matrix")
+  guard matrix_value is Some(actual_matrix) else { return None }
+  let matrix_fields = yaml_as_obj(actual_matrix, errors, ctx + ".matrix")
+  let axes : Array[(String, Array[String])] = []
+  let mut include_rows : Array[Map[String, String]] = []
+  let mut has_exclude = false
+  for field in matrix_fields {
+    if field.key == "include" {
+      include_rows = yaml_as_string_map_list(
+        Some(field.value),
+        errors,
+        ctx + ".matrix.include",
+      )
+      continue
+    }
+    if field.key == "exclude" {
+      has_exclude = true
+      continue
+    }
+    match field.value {
+      Seq(_) | Str(_) | Null =>
+        axes.push(
+          (
+            field.key,
+            yaml_as_string_list(
+              Some(field.value),
+              errors,
+              ctx + ".matrix." + field.key,
+            ),
+          ),
+        )
+      _ =>
+        errors.push(ctx + ".matrix." + field.key + " must be a string or list")
+    }
+  }
+  if has_exclude {
+    errors.push(ctx + ".matrix.exclude is not supported in P0")
+    return None
+  }
+  if axes.length() > 0 && include_rows.length() > 0 {
+    errors.push(ctx + ".matrix include with axes is not supported in P0")
+    return None
+  }
+  let mut rows : Array[Map[String, String]] = []
+  if axes.length() > 0 {
+    let current : Map[String, String] = {}
+    matrix_product_rows(axes, 0, current, rows)
+  } else {
+    rows = include_rows
+  }
+  if rows.length() == 0 {
+    errors.push(ctx + ".matrix must define at least one row")
+    return None
+  }
+  let fail_fast = yaml_as_optional_bool(
+    yaml_obj_get(strategy_fields, "fail-fast"),
+    errors,
+    ctx + ".fail-fast",
+  ).unwrap_or(true)
+  Some(new_job_matrix(rows, fail_fast~))
+}
+
+///|
 fn parse_run_defaults(
   value : YamlValue?,
   errors : Array[String],
@@ -726,6 +877,7 @@ fn parse_container_image(
 fn parse_job(id : String, value : YamlValue, errors : Array[String]) -> JobSpec {
   let ctx = "jobs." + id
   let fields = yaml_as_obj(value, errors, ctx)
+  let strategy_value = yaml_obj_get(fields, "strategy")
   new_job(
     id,
     parse_job_steps(yaml_obj_get(fields, "steps"), errors, ctx + ".steps"),
@@ -755,18 +907,7 @@ fn parse_job(id : String, value : YamlValue, errors : Array[String]) -> JobSpec 
       errors,
       ctx + ".defaults",
     ),
-    matrix_enabled=yaml_obj_get(
-        yaml_as_obj(
-          match yaml_obj_get(fields, "strategy") {
-            Some(strategy) => strategy
-            None => YamlValue::Obj([])
-          },
-          errors,
-          ctx + ".strategy",
-        ),
-        "matrix",
-      )
-      is Some(_),
+    matrix=parse_job_matrix(strategy_value, errors, ctx + ".strategy"),
     reusable_workflow=yaml_as_optional_string(
       yaml_obj_get(fields, "uses"),
       errors,

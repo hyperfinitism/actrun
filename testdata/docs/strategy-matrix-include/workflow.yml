@@ -1,0 +1,16 @@
+name: ci-matrix-include
+on: push
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: native
+          - os: ubuntu-latest
+            target: js
+    runs-on: ${{ matrix.os }}
+    steps:
+      - id: show
+        run: printf '%s' '${{ matrix.target }}'

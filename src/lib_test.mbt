@@ -1049,12 +1049,13 @@ test "lowering: local composite action rejects unsupported nested uses" {
 }
 
 ///|
-test "lowering: unsupported matrix and conditional step are rejected" {
+test "lowering: matrix outputs are rejected in P0" {
   let workflow = new_workflow("ci", [
     new_job(
       "test",
       [new_run_step("always", "echo ok", if_condition="always()")],
-      matrix_enabled=true,
+      outputs={ "artifact": "${{ steps.always.outputs.name }}" },
+      matrix=Some(new_job_matrix([{ "target": "native" }])),
     ),
   ])
 
@@ -1062,6 +1063,6 @@ test "lowering: unsupported matrix and conditional step are rejected" {
 
   inspect(
     result.errors,
-    content="[\"job 'test' matrix is not supported in MVP\", \"step 'test/always' if='always()' is not supported in MVP\"]",
+    content="[\"job 'test' matrix outputs are not supported in P0\"]",
   )
 }

@@ -1,0 +1,13 @@
+name: ci-matrix-axes
+on: push
+jobs:
+  build:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - id: show
+        run: printf '%s' '${{ matrix.os }}'

@@ -6,6 +6,8 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
+        exclude:
+          - os: ubuntu-latest
     runs-on: ubuntu-latest
     steps:
       - run: printf '%s' 'nope'

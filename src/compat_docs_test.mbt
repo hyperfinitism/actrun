@@ -210,6 +210,40 @@ test "compat docs: parse steps with fixture" {
 }
 
 ///|
+test "compat docs: lower matrix axes fixture" {
+  let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
+    "strategy-matrix-axes",
+  )
+  let first = compat_expect_task_plan(lowered.plan, "build__matrix_1/show")
+  let second = compat_expect_task_plan(lowered.plan, "build__matrix_2/show")
+
+  inspect(fixture.id, content="docs-strategy-matrix-axes")
+  inspect(workflow.jobs[0].matrix.unwrap().rows.length(), content="2")
+  inspect(lowered.errors, content="[]")
+  inspect(first.runs_on, content="[\"ubuntu-latest\"]")
+  inspect(first.script, content="printf '%s' 'ubuntu-latest'")
+  inspect(second.runs_on, content="[\"macos-latest\"]")
+  inspect(second.script, content="printf '%s' 'macos-latest'")
+}
+
+///|
+test "compat docs: lower matrix include fixture" {
+  let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
+    "strategy-matrix-include",
+  )
+  let first = compat_expect_task_plan(lowered.plan, "build__matrix_1/show")
+  let second = compat_expect_task_plan(lowered.plan, "build__matrix_2/show")
+
+  inspect(fixture.id, content="docs-strategy-matrix-include")
+  inspect(workflow.jobs[0].matrix.unwrap().fail_fast, content="false")
+  inspect(workflow.jobs[0].matrix.unwrap().rows.length(), content="2")
+  inspect(lowered.errors, content="[]")
+  inspect(first.runs_on, content="[\"ubuntu-latest\"]")
+  inspect(first.script, content="printf '%s' 'native'")
+  inspect(second.script, content="printf '%s' 'js'")
+}
+
+///|
 #cfg(target="native")
 async test "compat docs: missing env property evaluates to empty string" {
   let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(

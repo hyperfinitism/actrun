@@ -87,13 +87,14 @@
 - vendored normalized `nektos/act` shell fixtures for `bash`, `sh`, runner default shell, and custom shell known diff
 - `docs_urls` metadata and validation for upstream `nektos/act` fixtures against GitHub Docs
 - smoke tests for multiline/default shell, explicit `sh`, and checkout action aliases
-- unsupported feature guards for `uses`, `matrix`, reusable workflow, container, non-`success()` step conditions
+- unsupported feature guards for `uses`, advanced `matrix`, reusable workflow, container, non-`success()` step conditions
 - Expanded the `just e2e` black-box CLI harness with trigger skip, workflow file commands, remote node lifecycle, and remote docker lifecycle scenarios
 - Added black-box CLI scenarios for artifact action roundtrip, failure/blocking, unsupported `uses` / `matrix`, `--event` override precedence, `head_commit` fallback, direct `docker://...` actions, nested remote composite prefetch, nested remote composite cache hits, remote composite cache hits, remote `node` / `docker` failure cleanup, cached remote `node` / `docker` failure cleanup, nested remote `node` / `docker` prefetch, nested remote `node` / `docker` cache hits, cached remote `node` / `docker` action lifecycle, repo-mode `needs.outputs`, repo-mode job-scoped file commands, repo-mode multi-job summary, repo-mode `needs.outputs + GITHUB_STEP_SUMMARY`, repo-mode remote `node` / `docker` failure cleanup, repo-mode cached remote `node` / `docker` failure cleanup, repo-mode `head_commit` fallback, `--repo + --event` execution, and repo `origin` based repository auto-detection
 - Added builtin emulators for `actions/upload-artifact` and `actions/download-artifact`, plus dispatchable GitHub-hosted compat workflows that upload observed values as artifacts
 - Added builtin emulators for `actions/cache/save` and `actions/cache/restore`, plus local / GitHub-hosted cache roundtrip compat scenarios
 - Added builtin `actions/cache` restore + deferred post-save emulation, plus local / GitHub-hosted auto-save compat scenarios
 - Added builtin `actions/checkout` support for `path` and `sparse-checkout`, plus local / GitHub-hosted sparse checkout compat scenarios
+- Added minimal `strategy.matrix` support for axes-only and include-only workflows, plus docs/E2E coverage for `${{ matrix.* }}` substitution
 - Added `gha-compat-compare` to replay dispatchable compat workflows locally and compare downloaded GitHub-hosted artifacts against local emulator output
 - Added `gha-compat-live` to dispatch a GitHub-hosted compat workflow, wait for completion, download artifacts, and compare against local emulator output in one step
 - Fixed builtin `actions/checkout` sparse-checkout to match default cone-mode semantics on GitHub-hosted runners, and added `sparse-checkout-cone-mode: false` regression coverage
