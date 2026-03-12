@@ -2,9 +2,14 @@ name: Compat Cache Auto Save
 
 on:
   workflow_dispatch:
+    inputs:
+      compat_key:
+        description: Compat cache key
+        required: true
+        type: string
   push:
     paths:
-      - .github/workflows/compat-cache-auto-save.yml
+      - .github/workflows/__compat_cache_auto_save__.trigger
 
 permissions:
   contents: read
@@ -25,7 +30,7 @@ jobs:
         id: cache
         uses: actions/cache@v4
         with:
-          key: compat-cache-auto-save-v1
+          key: ${{ inputs.compat_key }}
           path: cache-dir
       - name: Verify miss output
         shell: bash
@@ -44,7 +49,7 @@ jobs:
         id: cache
         uses: actions/cache@v4
         with:
-          key: compat-cache-auto-save-v1
+          key: ${{ inputs.compat_key }}
           path: cache-dir
       - name: Build report
         shell: bash

@@ -17,6 +17,8 @@ workflow_src="$repo_root/.github/workflows/$workflow_file"
 workflow_dst="$workspace_root/.github/workflows/$workflow_file"
 event_path="$workspace_root/event.json"
 cli_bin="$repo_root/_build/native/debug/build/main/main.exe"
+event_added_path=".github/workflows/$workflow_file"
+compat_key="${ACTION_RUNNER_COMPAT_CACHE_KEY:-}"
 
 case "$workflow_file" in
   compat-checkout-artifact.yml)
@@ -30,6 +32,10 @@ case "$workflow_file" in
     ;;
   compat-cache-auto-save.yml)
     report_name="compat-cache-auto-save-report"
+    event_added_path=".github/workflows/__compat_cache_auto_save__.trigger"
+    if [ -z "$compat_key" ]; then
+      compat_key="compat-cache-auto-save-local"
+    fi
     ;;
   *)
     echo "unsupported compat workflow: $workflow_file" >&2
@@ -52,6 +58,13 @@ mkdir -p "$(dirname "$workflow_dst")"
 cp "$workflow_src" "$workflow_dst"
 cp "$repo_root/README.md" "$workspace_root/README.md"
 
+if [ -n "$compat_key" ]; then
+  placeholder='${{ inputs.compat_key }}'
+  workflow_text="$(cat "$workflow_dst")"
+  workflow_text="${workflow_text//$placeholder/$compat_key}"
+  printf '%s' "$workflow_text" > "$workflow_dst"
+fi
+
 cat > "$event_path" <<EOF
 {
   "ref": "refs/heads/main",
@@ -66,7 +79,7 @@ cat > "$event_path" <<EOF
   "commits": [
     {
       "added": [
-        ".github/workflows/$workflow_file"
+        "$event_added_path"
       ],
       "modified": [],
       "removed": []

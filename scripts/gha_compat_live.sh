@@ -9,9 +9,18 @@ fi
 workflow_file="$1"
 repo="${2:-mizchi/action_runner}"
 ref="${3:-main}"
+compat_key=""
+dispatch_args=()
+
+case "$workflow_file" in
+  compat-cache-auto-save.yml)
+    compat_key="compat-cache-auto-save-$(date +%s)-$$"
+    dispatch_args=(-f "compat_key=$compat_key")
+    ;;
+esac
 
 echo "dispatching $workflow_file on $repo@$ref"
-gh workflow run "$workflow_file" -R "$repo" --ref "$ref"
+gh workflow run "$workflow_file" -R "$repo" --ref "$ref" "${dispatch_args[@]}"
 
 run_id=""
 for _ in $(seq 1 24); do
@@ -48,4 +57,5 @@ mkdir -p "$download_dir"
 gh run download "$run_id" -R "$repo" --dir "$download_dir"
 
 moon build src/main --target native >/dev/null
-bash scripts/gha_compat_compare.sh "$workflow_file" "$download_dir"
+ACTION_RUNNER_COMPAT_CACHE_KEY="$compat_key" \
+  bash scripts/gha_compat_compare.sh "$workflow_file" "$download_dir"
