@@ -51,7 +51,7 @@ pub fn new_task_plan(String, String, String, String, String, String, String, Str
 
 pub fn new_uses_step(String, String, name? : String, env? : Map[String, String], if_condition? : String, with_values? : Map[String, String], continue_on_error? : String) -> StepSpec
 
-pub fn new_workflow(String, Array[JobSpec], trigger? : PushTrigger, permissions? : PermissionsSpec?, concurrency? : ConcurrencySpec?, env? : Map[String, String], defaults? : RunDefaults) -> WorkflowSpec
+pub fn new_workflow(String, Array[JobSpec], trigger? : PushTrigger, workflow_call? : Bool, permissions? : PermissionsSpec?, concurrency? : ConcurrencySpec?, env? : Map[String, String], defaults? : RunDefaults) -> WorkflowSpec
 
 pub fn parse_action_ref(String) -> ActionRefParseResult
 
@@ -270,6 +270,7 @@ pub struct WorkflowRunReport {
 pub struct WorkflowSpec {
   name : String
   trigger : PushTrigger
+  workflow_call : Bool
   permissions : PermissionsSpec?
   concurrency : ConcurrencySpec?
   env : Map[String, String]

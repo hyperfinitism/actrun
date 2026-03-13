@@ -171,6 +171,17 @@ test "compat docs: parse and reject concurrency fixture" {
 }
 
 ///|
+test "compat docs: parse and reject workflow_call fixture" {
+  let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
+    "workflow-call-parse",
+  )
+
+  inspect(fixture.id, content="docs-workflow-call-parse")
+  inspect(workflow.workflow_call, content="true")
+  inspect(lowered.errors, content="[\"workflow_call is not supported in MVP\"]")
+}
+
+///|
 test "compat docs: lower jobs needs fixture" {
   let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
     "jobs-needs",

@@ -1487,6 +1487,9 @@ pub fn lower_push_workflow_in_workspace(
   let entry_targets : Array[String] = []
   let seen_jobs : Map[String, Bool] = {}
   let expanded_jobs = expand_matrix_jobs(workflow.jobs)
+  if workflow.workflow_call {
+    errors.push("workflow_call is not supported in MVP")
+  }
   match workflow.permissions {
     Some(spec) if spec.values.length() > 0 =>
       errors.push("workflow permissions are not supported in MVP")

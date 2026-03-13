@@ -275,7 +275,10 @@ test "parser: reject non-push trigger" {
     #|      - run: echo ok
   let parsed = parse_workflow_yaml(src)
 
-  inspect(parsed.errors, content="[\"only push trigger is supported in MVP\"]")
+  inspect(
+    parsed.errors,
+    content="[\"only push and workflow_call triggers are supported in MVP\"]",
+  )
 }
 
 ///|
@@ -1415,4 +1418,25 @@ test "parser/lowering: workflow and job concurrency are parsed and rejected in M
     result.errors,
     content="[\"workflow concurrency is not supported in MVP\", \"job 'build' concurrency is not supported in MVP\"]",
   )
+}
+
+///|
+test "parser/lowering: workflow_call is parsed and rejected in MVP" {
+  let src =
+    #|name: reusable
+    #|'on': workflow_call
+    #|jobs:
+    #|  build:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - id: show
+    #|        run: printf '%s' hi
+  let parsed = parse_workflow_yaml(src)
+
+  inspect(parsed.errors, content="[]")
+  let workflow = parsed.workflow.unwrap()
+  inspect(workflow.workflow_call, content="true")
+
+  let result = lower_push_workflow(workflow)
+  inspect(result.errors, content="[\"workflow_call is not supported in MVP\"]")
 }

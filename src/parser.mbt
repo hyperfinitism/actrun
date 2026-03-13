@@ -886,6 +886,28 @@ fn parse_concurrency(
 }
 
 ///|
+priv struct ParsedTriggers {
+  push : PushTrigger
+  workflow_call : Bool
+}
+
+///|
+fn parse_workflow_call_trigger(
+  value : YamlValue?,
+  errors : Array[String],
+) -> Bool {
+  match value {
+    Some(Obj(_)) => true
+    Some(Null) => true
+    Some(_) => {
+      errors.push("on.workflow_call must be a mapping")
+      false
+    }
+    None => false
+  }
+}
+
+///|
 fn parse_push_trigger_value(
   value : YamlValue,
   errors : Array[String],
@@ -923,39 +945,55 @@ fn parse_push_trigger_value(
 }
 
 ///|
-fn parse_trigger(value : YamlValue?, errors : Array[String]) -> PushTrigger {
+fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
   match value {
     Some(Str(event_name)) =>
       if event_name == "push" {
-        new_push_trigger()
+        { push: new_push_trigger(), workflow_call: false }
+      } else if event_name == "workflow_call" {
+        { push: new_push_trigger(), workflow_call: true }
       } else {
-        errors.push("only push trigger is supported in MVP")
-        new_push_trigger()
+        errors.push("only push and workflow_call triggers are supported in MVP")
+        { push: new_push_trigger(), workflow_call: false }
       }
     Some(Seq(items)) => {
+      let mut workflow_call = false
       for item in items {
         if item is Str("push") {
-          return new_push_trigger()
+          return { push: new_push_trigger(), workflow_call }
+        }
+        if item is Str("workflow_call") {
+          workflow_call = true
         }
       }
-      errors.push("only push trigger is supported in MVP")
-      new_push_trigger()
+      if workflow_call {
+        { push: new_push_trigger(), workflow_call: true }
+      } else {
+        errors.push("only push and workflow_call triggers are supported in MVP")
+        { push: new_push_trigger(), workflow_call: false }
+      }
     }
-    Some(Obj(fields)) =>
-      match yaml_obj_get(fields, "push") {
-        Some(push_value) => parse_push_trigger_value(push_value, errors)
-        None => {
-          errors.push("only push trigger is supported in MVP")
-          new_push_trigger()
-        }
-      }
     Some(Null) => {
-      errors.push("on must define push")
-      new_push_trigger()
+      errors.push("on must define push or workflow_call")
+      { push: new_push_trigger(), workflow_call: false }
     }
     None => {
       errors.push("on is required")
-      new_push_trigger()
+      { push: new_push_trigger(), workflow_call: false }
+    }
+    Some(Obj(fields)) => {
+      let push = match yaml_obj_get(fields, "push") {
+        Some(push_value) => parse_push_trigger_value(push_value, errors)
+        None => new_push_trigger()
+      }
+      let workflow_call = parse_workflow_call_trigger(
+        yaml_obj_get(fields, "workflow_call"),
+        errors,
+      )
+      if yaml_obj_get(fields, "push") is None && not(workflow_call) {
+        errors.push("only push and workflow_call triggers are supported in MVP")
+      }
+      { push, workflow_call }
     }
   }
 }
@@ -1359,13 +1397,15 @@ pub fn parse_workflow_yaml(text : String) -> WorkflowParseResult {
     Some(_) => errors.push("jobs must be a mapping")
     None => errors.push("jobs is required")
   }
+  let parsed_trigger = parse_trigger(yaml_obj_get(root_fields, "on"), errors)
 
   let workflow = new_workflow(
     yaml_as_optional_string(yaml_obj_get(root_fields, "name"), errors, "name").unwrap_or(
       "",
     ),
     jobs,
-    trigger=parse_trigger(yaml_obj_get(root_fields, "on"), errors),
+    trigger=parsed_trigger.push,
+    workflow_call=parsed_trigger.workflow_call,
     permissions=parse_permissions(
       yaml_obj_get(root_fields, "permissions"),
       errors,

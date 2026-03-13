@@ -31,6 +31,8 @@
 - docs/E2E coverage for unsupported `permissions`
 - workflow/job `concurrency` parse + contract support with explicit lowering reject in MVP
 - docs/E2E coverage for unsupported `concurrency`
+- `workflow_call` trigger parse + contract support with explicit lowering reject in MVP
+- docs/E2E coverage for unsupported `workflow_call`
 
 - `push` trigger matcher for MVP CI workflows
 - workflow YAML subset parser for `on.push`, `jobs`, `steps`, `env`, and `defaults.run`

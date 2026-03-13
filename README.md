@@ -22,6 +22,7 @@
 - minimal expression functions (`contains`, `startsWith`, `endsWith`, `fromJSON`, `toJSON`, `hashFiles`)
 - `${{ vars.* }}` の最小対応 (`ACTION_RUNNER_VAR_<NAME>` から供給)
 - `${{ secrets.* }}` の最小対応 (`ACTION_RUNNER_SECRET_<NAME>` から供給, `if:` 直接参照は未対応)
+- `workflow_call` trigger の parse / contract 対応と lowering reject
 - workflow/job `permissions` / `concurrency` の parse / contract 対応と lowering reject
 - step-level `continue-on-error`
 - `${{ steps.<id>.outcome }}` / `${{ steps.<id>.conclusion }}` の最小対応
@@ -66,6 +67,7 @@
 
 - `${{ ... }}` の広い context (`github` / `runner` の残り, `vars`, `secrets` など)
 - `pwsh` binary が存在しない環境での PowerShell workflow 実行
+- reusable workflow (`workflow_call`) の実行
 - Wasm backend
 
 ## Action Namespace

@@ -1,0 +1,8 @@
+name: unsupported-workflow-call
+on: workflow_call
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: show
+        run: printf '%s' hi

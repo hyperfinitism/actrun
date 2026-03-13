@@ -215,6 +215,7 @@ pub fn new_job(
 pub struct WorkflowSpec {
   name : String
   trigger : PushTrigger
+  workflow_call : Bool
   permissions : PermissionsSpec?
   concurrency : ConcurrencySpec?
   env : Map[String, String]
@@ -227,12 +228,22 @@ pub fn new_workflow(
   name : String,
   jobs : Array[JobSpec],
   trigger? : PushTrigger = new_push_trigger(),
+  workflow_call? : Bool = false,
   permissions? : PermissionsSpec? = None,
   concurrency? : ConcurrencySpec? = None,
   env? : Map[String, String] = {},
   defaults? : RunDefaults = new_run_defaults(),
 ) -> WorkflowSpec {
-  { name, trigger, permissions, concurrency, env, defaults, jobs }
+  {
+    name,
+    trigger,
+    workflow_call,
+    permissions,
+    concurrency,
+    env,
+    defaults,
+    jobs,
+  }
 }
 
 ///|
