@@ -241,6 +241,26 @@ test "cli: parse cache list flags" {
   }
   inspect(options.action, content="list")
   inspect(options.cache_root.unwrap_or(""), content="/tmp/cache")
+  inspect(options.key_filter, content="")
+  inspect(options.workspace_key_filter, content="")
+  inspect(options.json_output, content="true")
+}
+
+///|
+test "cli: parse cache prune flags" {
+  let result = parse_cache_read_args([
+    "action_runner", "cache", "prune", "--cache-root", "/tmp/cache", "--key", "cache-key",
+    "--workspace-key", "workspace-1", "--json",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("cache prune parse failed")
+  }
+  inspect(options.action, content="prune")
+  inspect(options.cache_root.unwrap_or(""), content="/tmp/cache")
+  inspect(options.key_filter, content="cache-key")
+  inspect(options.workspace_key_filter, content="workspace-1")
   inspect(options.json_output, content="true")
 }
 
@@ -692,9 +712,23 @@ async test "cli: persist run record stores task logs and summaries" {
   let cache_list_exit = handle_cache_read_command({
     action: "list",
     cache_root: Some(cache_root_abs),
+    key_filter: "",
+    workspace_key_filter: "",
     json_output: true,
   })
   inspect(cache_list_exit, content="0")
+  let cache_prune_exit = handle_cache_read_command({
+    action: "prune",
+    cache_root: Some(cache_root_abs),
+    key_filter: "run-store-basic-key",
+    workspace_key_filter: workspace_key,
+    json_output: false,
+  })
+  inspect(cache_prune_exit, content="0")
+  let pruned_list_text = format_cache_list_text(
+    collect_cache_list_records(cache_root_abs),
+  )
+  inspect(pruned_list_text, content="")
   main_test_restore_env_var("ACTION_RUNNER_CACHE_ROOT", previous_cache_root)
 }
 

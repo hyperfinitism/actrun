@@ -87,7 +87,7 @@
   - [x] `action_runner artifact list <run-id>`
   - [x] `action_runner artifact download <run-id>`
   - [x] `action_runner cache list`
-  - [ ] `action_runner cache prune`
+  - [x] `action_runner cache prune`
 - [ ] 現行 CLI との互換レイヤ
   - [ ] 既存の `action_runner <workflow.yml> ...` を `workflow run` に寄せる
   - [ ] repo mode / event mode / substrate mode を subcommand に整理する

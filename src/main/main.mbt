@@ -62,6 +62,8 @@ struct ArtifactReadParseResult {
 struct CacheReadOptions {
   action : String
   cache_root : String?
+  key_filter : String
+  workspace_key_filter : String
   json_output : Bool
 }
 
@@ -123,11 +125,12 @@ struct CacheListRecord {
   key : String
   sequence : Int?
   files : Array[String]
+  store_path : String
 }
 
 ///|
 fn usage_text() -> String {
-  "Usage: action_runner <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner run list [--run-root <run_root>] [--json]\n       action_runner run view <run-id> [--run-root <run_root>] [--json]\n       action_runner run watch <run-id> [--run-root <run_root>] [--json]\n       action_runner run logs <run-id> [--run-root <run_root>] [--task <task-id>]\n       action_runner run download <run-id> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner artifact list <run-id> [--run-root <run_root>] [--json]\n       action_runner artifact download <run-id> --name <artifact-name> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner cache list [--cache-root <cache_root>] [--json]"
+  "Usage: action_runner <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner run list [--run-root <run_root>] [--json]\n       action_runner run view <run-id> [--run-root <run_root>] [--json]\n       action_runner run watch <run-id> [--run-root <run_root>] [--json]\n       action_runner run logs <run-id> [--run-root <run_root>] [--task <task-id>]\n       action_runner run download <run-id> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner artifact list <run-id> [--run-root <run_root>] [--json]\n       action_runner artifact download <run-id> --name <artifact-name> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner cache list [--cache-root <cache_root>] [--key <cache-key>] [--workspace-key <workspace_key>] [--json]\n       action_runner cache prune [--cache-root <cache_root>] --key <cache-key> [--workspace-key <workspace_key>] [--json]"
 }
 
 ///|
@@ -1464,10 +1467,12 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
     return { options: None, errors: ["cache subcommand requires an action"] }
   }
   let action = args[2]
-  if action != "list" {
+  if action != "list" && action != "prune" {
     return { options: None, errors: ["unknown cache subcommand: " + action] }
   }
   let mut cache_root : String? = None
+  let mut key_filter = ""
+  let mut workspace_key_filter = ""
   let mut json_output = false
   let mut index = 3
   while index < args.length() {
@@ -1477,12 +1482,19 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
       index += 1
       continue
     }
-    if arg == "--cache-root" {
+    if arg == "--cache-root" || arg == "--key" || arg == "--workspace-key" {
       if index + 1 >= args.length() {
-        errors.push("missing value for --cache-root")
+        errors.push("missing value for " + arg)
         break
       }
-      cache_root = Some(args[index + 1])
+      let value = args[index + 1]
+      if arg == "--cache-root" {
+        cache_root = Some(value)
+      } else if arg == "--key" {
+        key_filter = value
+      } else {
+        workspace_key_filter = value
+      }
       index += 2
       continue
     }
@@ -1493,10 +1505,22 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
     errors.push("unknown option: " + arg)
     index += 1
   }
+  if action == "prune" && key_filter.length() == 0 {
+    errors.push("--key is required for `cache prune`")
+  }
   if errors.length() > 0 {
     return { options: None, errors }
   }
-  { options: Some({ action, cache_root, json_output }), errors: [] }
+  {
+    options: Some({
+      action,
+      cache_root,
+      key_filter,
+      workspace_key_filter,
+      json_output,
+    }),
+    errors: [],
+  }
 }
 
 ///|
@@ -1664,6 +1688,7 @@ fn collect_cache_list_records(
           join_path(cache_root, "__action_runner_cache_sequence.txt"),
         ),
         files: collect_relative_files(cache_root, ignored~),
+        store_path: cache_root,
       })
     }
   }
@@ -1718,6 +1743,63 @@ fn format_cache_list_text(caches : Array[CacheListRecord]) -> String {
     ""
   } else {
     lines.join("\n") + "\n"
+  }
+}
+
+///|
+fn cache_record_matches(
+  record : CacheListRecord,
+  options : CacheReadOptions,
+) -> Bool {
+  if options.key_filter.length() > 0 && record.key != options.key_filter {
+    return false
+  }
+  if options.workspace_key_filter.length() > 0 &&
+    record.workspace_key != options.workspace_key_filter {
+    return false
+  }
+  true
+}
+
+///|
+fn remove_tree(path : String) -> Bool {
+  try {
+    if not(@xfs.path_exists(path)) {
+      return true
+    }
+    if @xfs.is_dir(path) {
+      for entry in @xfs.read_dir(path) {
+        if not(remove_tree(join_path(path, entry))) {
+          return false
+        }
+      }
+      @xfs.remove_dir(path)
+      true
+    } else {
+      @xfs.remove_file(path)
+      true
+    }
+  } catch {
+    _ => false
+  } noraise {
+    value => value
+  }
+}
+
+///|
+fn prune_empty_workspace_cache_dirs(cache_root_base : String) -> Unit {
+  if not(@xfs.path_exists(cache_root_base)) {
+    return
+  }
+  for workspace_key in sorted_dir_entries(cache_root_base) {
+    let workspace_dir = join_path(cache_root_base, workspace_key)
+    if not(run_store_is_dir(workspace_dir)) {
+      continue
+    }
+    let entries = sorted_dir_entries(workspace_dir)
+    if entries.length() == 0 {
+      ignore(try? @xfs.remove_dir(workspace_dir))
+    }
   }
 }
 
@@ -1989,17 +2071,32 @@ fn handle_artifact_read_command(options : ArtifactReadOptions) -> Int {
 
 ///|
 fn handle_cache_read_command(options : CacheReadOptions) -> Int {
-  if options.action != "list" {
+  if options.action != "list" && options.action != "prune" {
     print_errors(["unknown cache subcommand: " + options.action])
     return 1
   }
   let cache_root = cache_store_base_root_for_read(options.cache_root)
   let caches = collect_cache_list_records(cache_root)
+  let filtered : Array[CacheListRecord] = []
+  for cache in caches {
+    if cache_record_matches(cache, options) {
+      filtered.push(cache)
+    }
+  }
+  if options.action == "prune" {
+    for cache in filtered {
+      if not(remove_tree(cache.store_path)) {
+        print_errors(["failed to remove cache " + cache.key])
+        return 1
+      }
+    }
+    prune_empty_workspace_cache_dirs(cache_root)
+  }
   if options.json_output {
-    println(cache_list_json(caches))
+    println(cache_list_json(filtered))
     return 0
   }
-  let text = format_cache_list_text(caches)
+  let text = format_cache_list_text(filtered)
   if text.length() > 0 {
     println(text.trim_end(chars="\n").to_string())
   }

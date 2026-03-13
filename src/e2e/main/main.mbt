@@ -1159,6 +1159,24 @@ async fn run_store_basic() -> Unit {
     "push|mizchi/action_runner",
     scenario + " cache root override",
   )
+  let cache_prune_result = e2e_run_cli([
+    "cache", "prune", "--cache-root", cache_root, "--key", "run-store-basic-key",
+  ])
+  e2e_expect_ok(cache_prune_result, scenario + " cache prune")
+  e2e_expect_contains(
+    cache_prune_result.stdout,
+    "run-store-basic-key\t",
+    scenario,
+  )
+  let cache_list_after_prune = e2e_run_cli([
+    "cache", "list", "--cache-root", cache_root,
+  ])
+  e2e_expect_ok(cache_list_after_prune, scenario + " cache list after prune")
+  e2e_expect_eq(
+    cache_list_after_prune.stdout,
+    "",
+    scenario + " cache list empty",
+  )
 }
 
 ///|

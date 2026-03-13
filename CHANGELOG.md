@@ -40,6 +40,8 @@
 - whitebox/E2E coverage for artifact index listing and artifact download from persisted run store
 - `action_runner cache list` の最小 read-only subcommand を追加
 - whitebox/E2E coverage for cache store listing across workspace roots
+- `action_runner cache prune --key <cache-key>` の最小 delete subcommand を追加
+- whitebox/E2E coverage for cache store pruning by exact key
 - CLI に `--artifact-root`, `--cache-root`, `--github-action-cache-root`, `--registry-root`, `--wasm-action-root` を追加し、local injection point を env override ではなく flag で制御できるようにした
 - black-box coverage for CLI root override flags via run store / remote reusable workflow / custom registry / wasm scenarios
 - `wasm://...` action を Wasm backend contract として resolve / lower し、`ACTION_RUNNER_WASM_BIN` + `ACTION_RUNNER_WASM_ACTION_ROOT` で file-based Wasm module を実行する最小 adapter
