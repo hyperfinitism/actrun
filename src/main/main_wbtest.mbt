@@ -305,6 +305,15 @@ test "cli: parse cache prune flags" {
 }
 
 ///|
+test "cli: run state exit code mapping" {
+  inspect(run_state_exit_code("completed"), content="0")
+  inspect(run_state_exit_code("success"), content="0")
+  inspect(run_state_exit_code("skipped"), content="0")
+  inspect(run_state_exit_code("partial_failed"), content="1")
+  inspect(run_state_exit_code("cancelled"), content="1")
+}
+
+///|
 test "cli: reject missing option value" {
   let result = parse_cli_args([
     "action_runner", ".github/workflows/ci.yml", "--repo",
@@ -475,6 +484,7 @@ test "cli: persist run record allocates sequential run ids" {
     finished_at_ms: 2000UL,
     state: "completed",
     ok: true,
+    exit_code: 0,
     repository: "mizchi/action_runner",
     ref_name: "main",
     before_sha: "def456",
@@ -499,6 +509,7 @@ test "cli: persist run record allocates sequential run ids" {
   )
   inspect(first_json.contains("\"started_at_ms\": 1000"), content="true")
   inspect(first_json.contains("\"finished_at_ms\": 2000"), content="true")
+  inspect(first_json.contains("\"exit_code\": 0"), content="true")
   inspect(
     @xfs.read_file_to_string(run_root + "/run-1/jobs.json"),
     content="[]\n",
@@ -586,6 +597,7 @@ async test "cli: persist run record stores task logs and summaries" {
       finished_at_ms: 2000UL,
       state: report.state,
       ok: report.ok,
+      exit_code: 0,
       repository: "mizchi/action_runner",
       ref_name: "main",
       before_sha: "",

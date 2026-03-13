@@ -97,6 +97,7 @@ struct RunRecord {
   finished_at_ms : UInt64
   state : String
   ok : Bool
+  exit_code : Int
   repository : String
   ref_name : String
   before_sha : String
@@ -530,6 +531,11 @@ fn json_optional_int(value : Int?) -> String {
 
 ///|
 fn json_uint64(value : UInt64) -> String {
+  value.to_string()
+}
+
+///|
+fn json_int(value : Int) -> String {
   value.to_string()
 }
 
@@ -1090,6 +1096,9 @@ fn run_record_json(
   "  \"ok\": " +
   (if record.ok { "true" } else { "false" }) +
   ",\n" +
+  "  \"exit_code\": " +
+  json_int(record.exit_code) +
+  ",\n" +
   "  \"repository\": " +
   json_string(record.repository) +
   ",\n" +
@@ -1220,6 +1229,7 @@ fn persist_run_record(
           finished_at_ms: record.finished_at_ms,
           state: record.state,
           ok: record.ok,
+          exit_code: record.exit_code,
           repository: record.repository,
           ref_name: record.ref_name,
           before_sha: record.before_sha,
@@ -2050,6 +2060,10 @@ fn format_run_view_text(run_json_text : String) -> String? {
   if finished_at_ms.length() > 0 {
     lines.push("finished_at_ms=\{finished_at_ms}")
   }
+  let exit_code = run_json_number_text(payload, "exit_code")
+  if exit_code.length() > 0 {
+    lines.push("exit_code=\{exit_code}")
+  }
   for job_json in run_json_array(payload, "jobs") {
     if job_json is { "id": String(id), "status": String(status), .. } {
       lines.push("job/\{id}=\{status}")
@@ -2471,6 +2485,15 @@ fn run_state_is_terminal(state : String) -> Bool {
 }
 
 ///|
+fn run_state_exit_code(state : String) -> Int {
+  if state == "completed" || state == "success" || state == "skipped" {
+    0
+  } else {
+    1
+  }
+}
+
+///|
 async fn handle_run_watch_command(options : RunReadOptions) -> Int {
   let run_root = options.run_root.unwrap_or(default_run_root())
   let run_dir = join_path(run_root, options.run_id)
@@ -2495,14 +2518,23 @@ async fn handle_run_watch_command(options : RunReadOptions) -> Int {
     }
     let state = run_json_string(payload, "state")
     if run_state_is_terminal(state) {
+      let exit_code_text = run_json_number_text(payload, "exit_code")
+      let exit_code = if exit_code_text.length() > 0 {
+        let parsed = @strconv.parse_int64(exit_code_text) catch {
+          _ => return run_state_exit_code(state)
+        }
+        parsed.to_int()
+      } else {
+        run_state_exit_code(state)
+      }
       if options.json_output {
         println(run_json_text.trim_end(chars="\n").to_string())
-        return 0
+        return exit_code
       }
       match format_run_view_text(run_json_text) {
         Some(text) => {
           println(text.trim_end(chars="\n").to_string())
-          return 0
+          return exit_code
         }
         None => {
           print_errors(["failed to parse " + run_json_path])
@@ -2803,6 +2835,7 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
       finished_at_ms: @env.now(),
       state: "skipped",
       ok: true,
+      exit_code: 0,
       repository,
       ref_name: trigger_event.ref_name,
       before_sha: trigger_event.before_sha,
@@ -2848,6 +2881,11 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
       finished_at_ms: @env.now(),
       state: report.state,
       ok: report.ok,
+      exit_code: if report.ok {
+        0
+      } else {
+        run_state_exit_code(report.state)
+      },
       repository,
       ref_name: trigger_event.ref_name,
       before_sha: trigger_event.before_sha,

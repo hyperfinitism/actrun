@@ -96,7 +96,7 @@
 - [ ] CLI 出力 contract
   - [x] `--json` を全 read command に追加
   - [ ] run state / artifact metadata / cache metadata の JSON schema を固定
-  - [ ] non-zero exit code と run state の対応を固定
+  - [x] non-zero exit code と run state の対応を固定
 - [ ] CLI black-box
   - [x] run store を前提にした `view/watch/logs/download` E2E
   - [ ] run store / `run logs` / `run view` が secret を mask して表示・保存することを確認する security test

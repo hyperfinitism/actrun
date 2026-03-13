@@ -1289,6 +1289,40 @@ async fn run_workflow_run_basic() -> Unit {
 
 ///|
 #cfg(target="native")
+async fn run_watch_failure_exit_code() -> Unit {
+  let scenario = "run-watch-failure-exit-code"
+  let workspace = e2e_prepare_copied_dir(
+    "_build/e2e/workspaces",
+    scenario,
+    e2e_fixture_dir(scenario),
+  )
+  let run_root = e2e_join_path(workspace, "runs")
+  let run_result = e2e_run_cli([
+    "workflow",
+    "run",
+    e2e_join_path(workspace, "workflow.yml"),
+    "--run-root",
+    run_root,
+  ])
+  e2e_expect_fail(run_result, scenario + " run")
+  e2e_expect_contains(run_result.stdout, "run_id=run-1", scenario)
+  e2e_expect_contains(run_result.stdout, "state=partial_failed", scenario)
+  let run_json = e2e_read_text(e2e_join_path(run_root, "run-1/run.json"))
+  e2e_expect_contains(run_json, "\"exit_code\": 1", scenario)
+  let watch_result = e2e_run_cli([
+    "run", "watch", "run-1", "--run-root", run_root,
+  ])
+  e2e_expect_fail(watch_result, scenario + " watch")
+  e2e_expect_contains(watch_result.stdout, "state=partial_failed", scenario)
+  let watch_json_result = e2e_run_cli([
+    "run", "watch", "run-1", "--run-root", run_root, "--json",
+  ])
+  e2e_expect_fail(watch_json_result, scenario + " watch json")
+  e2e_expect_contains(watch_json_result.stdout, "\"exit_code\": 1", scenario)
+}
+
+///|
+#cfg(target="native")
 async fn run_local_composite_nested() -> Unit {
   let scenario = "local-composite-nested"
   let workspace = e2e_prepare_copied_dir(
@@ -5225,6 +5259,10 @@ async fn main {
   println("e2e: workflow-run-basic")
   run_workflow_run_basic()
   println("e2e: workflow-run-basic ok")
+
+  println("e2e: run-watch-failure-exit-code")
+  run_watch_failure_exit_code()
+  println("e2e: run-watch-failure-exit-code ok")
 
   println("e2e: local-composite-nested")
   run_local_composite_nested()
