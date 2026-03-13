@@ -557,27 +557,76 @@ pub struct WorkflowRunReport {
 }
 
 ///|
+fn strip_add_mask_lines(text : String) -> String {
+  let lines : Array[String] = []
+  for line_view in text.split("\n") {
+    let line = line_view.to_string()
+    if not(line.trim(chars=" \t\r").to_string().has_prefix("::add-mask::")) {
+      lines.push(line)
+    }
+  }
+  lines.join("\n")
+}
+
+///|
+pub fn extract_add_mask_values(report : WorkflowRunReport) -> Array[String] {
+  let values : Array[String] = []
+  let prefix = "::add-mask::"
+  for task in report.task_reports {
+    for line_view in task.stdout.split("\n") {
+      let line = line_view.trim(chars=" \t\r").to_string()
+      if line.has_prefix(prefix) && line.length() > prefix.length() {
+        let value = String::unsafe_substring(line, start=prefix.length(), end=line.length())
+        if value.length() > 0 {
+          values.push(value)
+        }
+      }
+    }
+    for line_view in task.stderr.split("\n") {
+      let line = line_view.trim(chars=" \t\r").to_string()
+      if line.has_prefix(prefix) && line.length() > prefix.length() {
+        let value = String::unsafe_substring(line, start=prefix.length(), end=line.length())
+        if value.length() > 0 {
+          values.push(value)
+        }
+      }
+    }
+  }
+  values
+}
+
+///|
 pub fn mask_report_secrets(
   report : WorkflowRunReport,
   secret_values : Array[String],
 ) -> WorkflowRunReport {
-  if secret_values.length() == 0 {
+  // Also collect ::add-mask:: values from stdout/stderr
+  let add_mask_values = extract_add_mask_values(report)
+  let all_secrets : Array[String] = []
+  for value in secret_values {
+    all_secrets.push(value)
+  }
+  for value in add_mask_values {
+    all_secrets.push(value)
+  }
+  if all_secrets.length() == 0 {
     return report
   }
   let masked_tasks : Array[TaskRunReport] = []
   for task in report.task_reports {
     masked_tasks.push({
       ..task,
-      stdout: mask_secrets(task.stdout, secret_values),
-      stderr: mask_secrets(task.stderr, secret_values),
-      summary: mask_secrets(task.summary, secret_values),
+      script: mask_secrets(task.script, all_secrets),
+      stdout: strip_add_mask_lines(mask_secrets(task.stdout, all_secrets)),
+      stderr: strip_add_mask_lines(mask_secrets(task.stderr, all_secrets)),
+      summary: mask_secrets(task.summary, all_secrets),
     })
   }
   let masked_steps : Array[WorkflowStepReport] = []
   for step in report.steps {
     masked_steps.push({
       ..step,
-      message: mask_secrets(step.message, secret_values),
+      message: mask_secrets(step.message, all_secrets),
     })
   }
   {

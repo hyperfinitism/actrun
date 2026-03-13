@@ -9,3 +9,7 @@ jobs:
         run: |
           printf '%s' "token=${{ secrets.CALL_TOKEN }}"
           printf '%s' "leaked-${{ secrets.CALL_TOKEN }}" >> "$GITHUB_STEP_SUMMARY"
+      - id: add-mask
+        run: |
+          echo "::add-mask::dynamic-secret-value"
+          printf '%s' "before-dynamic-secret-value-after"

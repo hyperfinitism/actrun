@@ -5948,6 +5948,26 @@ async fn run_secret_mask() -> Unit {
   e2e_expect_contains(
     logs.stdout, "***", scenario + " logs masked",
   )
+
+  // ::add-mask:: dynamic masking: "dynamic-secret-value" must be masked
+  let add_mask_logs = e2e_run_cli([
+    "run", "logs", "run-1", "--run-root", run_root, "--task", "build/add-mask",
+  ])
+  e2e_expect_ok(add_mask_logs, scenario + " add-mask logs")
+  e2e_expect_not_contains(
+    add_mask_logs.stdout, "dynamic-secret-value",
+    scenario + " add-mask value leak",
+  )
+  // The ::add-mask:: line itself should be stripped
+  e2e_expect_not_contains(
+    add_mask_logs.stdout, "::add-mask::",
+    scenario + " add-mask command leak",
+  )
+  // The masked output should contain ***
+  e2e_expect_contains(
+    add_mask_logs.stdout, "before-***-after",
+    scenario + " add-mask replaced",
+  )
 }
 
 ///|
