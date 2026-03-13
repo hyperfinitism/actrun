@@ -34,6 +34,12 @@ type RunRecord
 
 type RunTaskFiles
 
+type WorkflowListRecord
+
+type WorkflowReadOptions
+
+type WorkflowReadParseResult
+
 // Type aliases
 
 // Traits

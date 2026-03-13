@@ -149,7 +149,7 @@ struct WorkflowListRecord {
 
 ///|
 fn usage_text() -> String {
-  "Usage: action_runner <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner workflow run <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner workflow list [--repo <repo_root>] [--json]\n       action_runner run list [--run-root <run_root>] [--json]\n       action_runner run view <run-id> [--run-root <run_root>] [--json]\n       action_runner run watch <run-id> [--run-root <run_root>] [--json]\n       action_runner run logs <run-id> [--run-root <run_root>] [--task <task-id>]\n       action_runner run download <run-id> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner artifact list <run-id> [--run-root <run_root>] [--json]\n       action_runner artifact download <run-id> --name <artifact-name> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner cache list [--cache-root <cache_root>] [--key <cache-key>] [--workspace-key <workspace_key>] [--json]\n       action_runner cache prune [--cache-root <cache_root>] --key <cache-key> [--workspace-key <workspace_key>] [--json]"
+  "Usage: action_runner <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner workflow run <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner workflow list [--repo <repo_root>] [--json]\n       action_runner run list [--run-root <run_root>] [--json]\n       action_runner run view <run-id> [--run-root <run_root>] [--json]\n       action_runner run watch <run-id> [--run-root <run_root>] [--json]\n       action_runner run logs <run-id> [--run-root <run_root>] [--task <task-id>] [--json]\n       action_runner run download <run-id> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--json]\n       action_runner artifact list <run-id> [--run-root <run_root>] [--json]\n       action_runner artifact download <run-id> --name <artifact-name> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--json]\n       action_runner cache list [--cache-root <cache_root>] [--key <cache-key>] [--workspace-key <workspace_key>] [--json]\n       action_runner cache prune [--cache-root <cache_root>] --key <cache-key> [--workspace-key <workspace_key>] [--json]"
 }
 
 ///|
@@ -1454,11 +1454,6 @@ fn parse_run_read_args(args : Array[String]) -> RunReadParseResult {
   if action != "download" && download_dir != "." {
     errors.push("--dir is only supported for `run download`")
   }
-  if action != "list" && json_output && action != "view" && action != "watch" {
-    errors.push(
-      "--json is only supported for `run list`, `run view`, or `run watch`",
-    )
-  }
   if errors.length() > 0 {
     return { options: None, errors }
   }
@@ -2139,6 +2134,106 @@ fn format_run_logs_text(
 }
 
 ///|
+fn read_optional_text(path : String) -> String? {
+  match read_text(path) {
+    Some(text) => Some(text.trim_end(chars="\n").to_string())
+    None => None
+  }
+}
+
+///|
+fn run_task_logs_json(
+  run_dir : String,
+  run_json_text : String,
+  task_id? : String? = None,
+) -> String? {
+  let payload = @json.parse(run_json_text) catch { _ => return None }
+  guard payload is Object(_) else { return None }
+  let items : Array[String] = []
+  let mut matched_task = task_id is None
+  for task_json in run_json_array(payload, "tasks") {
+    guard task_json is { "id": String(id), .. } else { continue }
+    match task_id {
+      Some(expected) if expected != id => continue
+      Some(_) => matched_task = true
+      None => ()
+    }
+    let stdout_path = run_json_string(task_json, "stdout_path")
+    let stdout = if stdout_path.length() > 0 {
+      read_optional_text(join_path(run_dir, stdout_path)).unwrap_or("")
+    } else {
+      ""
+    }
+    let stderr_path = run_json_string(task_json, "stderr_path")
+    let stderr = if stderr_path.length() > 0 {
+      read_optional_text(join_path(run_dir, stderr_path)).unwrap_or("")
+    } else {
+      ""
+    }
+    let summary : String? = match run_json_field(task_json, "summary_path") {
+      Some(String(summary_path)) if summary_path.length() > 0 =>
+        read_optional_text(join_path(run_dir, summary_path))
+      _ => None
+    }
+    items.push(
+      "{ " +
+      "\"task_id\": " +
+      json_string(id) +
+      ", " +
+      "\"stdout\": " +
+      json_string(stdout) +
+      ", " +
+      "\"stderr\": " +
+      json_string(stderr) +
+      ", " +
+      "\"summary\": " +
+      json_optional_string(summary) +
+      " }",
+    )
+  }
+  if not(matched_task) {
+    return None
+  }
+  Some("{ \"tasks\": [" + items.join(", ") + "] }")
+}
+
+///|
+fn artifact_download_json(
+  artifact_name : String,
+  download_dir : String,
+  files : Array[String],
+) -> String {
+  "{ " +
+  "\"artifact\": " +
+  json_string(artifact_name) +
+  ", " +
+  "\"dir\": " +
+  json_string(download_dir) +
+  ", " +
+  "\"files\": " +
+  json_string_array(files) +
+  " }"
+}
+
+///|
+fn run_download_json(
+  run_id : String,
+  download_dir : String,
+  artifacts : Array[String],
+) -> String {
+  "{ " +
+  "\"run_id\": " +
+  json_string(run_id) +
+  ", " +
+  "\"dir\": " +
+  json_string(download_dir) +
+  ", " +
+  "\"artifacts\": " +
+  json_string_array(artifacts) +
+  " }"
+}
+
+///|
 fn handle_workflow_read_command(options : WorkflowReadOptions) -> Int {
   if options.action != "list" {
     print_errors(["unknown workflow subcommand: " + options.action])
@@ -2244,6 +2339,10 @@ fn handle_artifact_read_command(options : ArtifactReadOptions) -> Int {
     copied.push(relative_path)
   }
   let copied_text = copied.join(",")
+  if options.json_output {
+    println(artifact_download_json(options.artifact_name, download_dir, copied))
+    return 0
+  }
   println("artifact=\{options.artifact_name}")
   println("dir=\{download_dir}")
   println("files=\{copied_text}")
@@ -2351,6 +2450,10 @@ fn handle_run_download_command(
     downloaded.push(artifact_name)
   }
   let downloaded_text = downloaded.join(",")
+  if options.json_output {
+    println(run_download_json(options.run_id, download_dir, downloaded))
+    return 0
+  }
   println("run_id=\{options.run_id}")
   println("dir=\{download_dir}")
   println("artifacts=\{downloaded_text}")
@@ -2478,6 +2581,24 @@ fn handle_run_read_command(options : RunReadOptions) -> Int {
     return handle_run_download_command(
       options, run_json_text, artifacts_json_text,
     )
+  }
+  if options.json_output {
+    match run_task_logs_json(run_dir, run_json_text, task_id=options.task_id) {
+      Some(text) => {
+        println(text)
+        return 0
+      }
+      None => {
+        match options.task_id {
+          Some(task_id) =>
+            print_errors([
+              "task logs not found for " + task_id + " in " + run_dir,
+            ])
+          None => print_errors(["failed to parse " + run_json_path])
+        }
+        return 1
+      }
+    }
   }
   match format_run_logs_text(run_dir, run_json_text, task_id=options.task_id) {
     Some(text) => {

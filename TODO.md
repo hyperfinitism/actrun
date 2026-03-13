@@ -60,6 +60,8 @@
   - [ ] `--workspace-mode tmp`
   - [ ] `--workspace-mode docker`
   - [ ] 各 mode の cleanup / isolation policy を固定
+  - [ ] secret を含みうる `_build/action_runner/file_commands` / `runner_temp` が run 後に cleanup されることを確認する security test
+  - [ ] step script / `.npmrc` / file command file が world-readable にならないことを確認する security test
 - [x] local injection point を CLI flag に昇格
   - [x] `--run-root`
   - [x] `--artifact-root`
@@ -92,11 +94,12 @@
   - [ ] 既存の `action_runner <workflow.yml> ...` を `workflow run` に寄せる
   - [ ] repo mode / event mode / substrate mode を subcommand に整理する
 - [ ] CLI 出力 contract
-  - [ ] `--json` を全 read command に追加
+  - [x] `--json` を全 read command に追加
   - [ ] run state / artifact metadata / cache metadata の JSON schema を固定
   - [ ] non-zero exit code と run state の対応を固定
 - [ ] CLI black-box
   - [x] run store を前提にした `view/watch/logs/download` E2E
+  - [ ] run store / `run logs` / `run view` が secret を mask して表示・保存することを確認する security test
   - [ ] `gh run` / `gh workflow` の naming に寄せた usage docs
 
 ## P2: GitHub 標準 actions を広げる
@@ -157,6 +160,7 @@
   - [ ] builtin action coverage matrix を container job で揃える
   - [ ] service `volumes` / `options` / `credentials` semantics
   - [ ] service log capture と run store 保存
+  - [ ] `docker login` credential が argv / stderr / run store に平文で出ないことを確認する security test
 - [ ] shell / host 差分
   - [ ] `pwsh` 実行環境差分
   - [ ] shell template compatibility の fixture 拡張

@@ -1030,6 +1030,20 @@ async fn run_store_basic() -> Unit {
   e2e_expect_contains(logs_result.stdout, "hello-run-store", scenario)
   e2e_expect_contains(logs_result.stdout, "==> build/record summary", scenario)
   e2e_expect_contains(logs_result.stdout, "summary-run-store", scenario)
+  let logs_json_result = e2e_run_cli([
+    "run", "logs", "run-1", "--run-root", run_root, "--task", "build/record", "--json",
+  ])
+  e2e_expect_ok(logs_json_result, scenario + " logs json")
+  e2e_expect_contains(
+    logs_json_result.stdout,
+    "\"task_id\": \"build/record\"",
+    scenario,
+  )
+  e2e_expect_contains(
+    logs_json_result.stdout,
+    "\"stdout\": \"hello-run-store\"",
+    scenario,
+  )
   let second_result = e2e_run_cli([
     e2e_join_path(workspace, "workflow.yml"),
     "--event",
@@ -1103,6 +1117,24 @@ async fn run_store_basic() -> Unit {
     "push|mizchi/action_runner",
     scenario + " artifact download file",
   )
+  let artifact_download_json_result = e2e_run_cli([
+    "artifact", "download", "run-1", "--run-root", run_root, "--artifact-root", artifact_root,
+    "--name", "report", "--dir", download_dir, "--json",
+  ])
+  e2e_expect_ok(
+    artifact_download_json_result,
+    scenario + " artifact download json",
+  )
+  e2e_expect_contains(
+    artifact_download_json_result.stdout,
+    "\"artifact\": \"report\"",
+    scenario,
+  )
+  e2e_expect_contains(
+    artifact_download_json_result.stdout,
+    "\"files\": [\"result.txt\"]",
+    scenario,
+  )
   let run_download_dir = e2e_join_path(workspace, "run-downloaded")
   let run_download_result = e2e_run_cli([
     "run", "download", "run-1", "--run-root", run_root, "--artifact-root", artifact_root,
@@ -1115,6 +1147,21 @@ async fn run_store_basic() -> Unit {
     e2e_read_text(e2e_join_path(run_download_dir, "report/result.txt")),
     "push|mizchi/action_runner",
     scenario + " run download file",
+  )
+  let run_download_json_result = e2e_run_cli([
+    "run", "download", "run-1", "--run-root", run_root, "--artifact-root", artifact_root,
+    "--dir", run_download_dir, "--json",
+  ])
+  e2e_expect_ok(run_download_json_result, scenario + " run download json")
+  e2e_expect_contains(
+    run_download_json_result.stdout,
+    "\"run_id\": \"run-1\"",
+    scenario,
+  )
+  e2e_expect_contains(
+    run_download_json_result.stdout,
+    "\"artifacts\": [\"report\"]",
+    scenario,
   )
   let cache_list_result = e2e_run_cli([
     "cache", "list", "--cache-root", cache_root,

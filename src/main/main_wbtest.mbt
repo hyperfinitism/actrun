@@ -198,7 +198,7 @@ test "cli: parse run watch flags" {
 test "cli: parse run logs flags" {
   let result = parse_run_read_args([
     "action_runner", "run", "logs", "run-1", "--run-root", "/tmp/runs", "--task",
-    "build/record",
+    "build/record", "--json",
   ])
   inspect(result.errors, content="[]")
   let options = match result.options {
@@ -209,14 +209,14 @@ test "cli: parse run logs flags" {
   inspect(options.run_id, content="run-1")
   inspect(options.run_root.unwrap_or(""), content="/tmp/runs")
   inspect(options.task_id.unwrap_or(""), content="build/record")
-  inspect(options.json_output, content="false")
+  inspect(options.json_output, content="true")
 }
 
 ///|
 test "cli: parse run download flags" {
   let result = parse_run_read_args([
     "action_runner", "run", "download", "run-1", "--run-root", "/tmp/runs", "--artifact-root",
-    "/tmp/artifacts", "--dir", "/tmp/out",
+    "/tmp/artifacts", "--dir", "/tmp/out", "--json",
   ])
   inspect(result.errors, content="[]")
   let options = match result.options {
@@ -228,7 +228,7 @@ test "cli: parse run download flags" {
   inspect(options.run_root.unwrap_or(""), content="/tmp/runs")
   inspect(options.artifact_root.unwrap_or(""), content="/tmp/artifacts")
   inspect(options.download_dir, content="/tmp/out")
-  inspect(options.json_output, content="false")
+  inspect(options.json_output, content="true")
 }
 
 ///|
@@ -253,6 +253,7 @@ test "cli: parse artifact download flags" {
   let result = parse_artifact_read_args([
     "action_runner", "artifact", "download", "run-1", "--run-root", "/tmp/runs",
     "--artifact-root", "/tmp/artifacts", "--name", "report", "--dir", "/tmp/out",
+    "--json",
   ])
   inspect(result.errors, content="[]")
   let options = match result.options {
@@ -265,6 +266,7 @@ test "cli: parse artifact download flags" {
   inspect(options.artifact_root.unwrap_or(""), content="/tmp/artifacts")
   inspect(options.artifact_name, content="report")
   inspect(options.download_dir, content="/tmp/out")
+  inspect(options.json_output, content="true")
 }
 
 ///|
