@@ -123,6 +123,21 @@ test "cli: parse run list flags" {
 }
 
 ///|
+test "cli: parse workflow list flags" {
+  let result = parse_workflow_read_args([
+    "action_runner", "workflow", "list", "--repo", "/repo", "--json",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("workflow list parse failed")
+  }
+  inspect(options.action, content="list")
+  inspect(options.repo_root.unwrap_or(""), content="/repo")
+  inspect(options.json_output, content="true")
+}
+
+///|
 test "cli: parse run view flags" {
   let result = parse_run_read_args([
     "action_runner", "run", "view", "run-1", "--run-root", "/tmp/runs", "--json",
@@ -730,6 +745,46 @@ async test "cli: persist run record stores task logs and summaries" {
   )
   inspect(pruned_list_text, content="")
   main_test_restore_env_var("ACTION_RUNNER_CACHE_ROOT", previous_cache_root)
+}
+
+///|
+test "cli: workflow list reads .github/workflows from repo root" {
+  ensure_main_test_dir("_build")
+  ensure_main_test_dir("_build/test-main")
+  let repo_root = "_build/test-main/workflow-list"
+  remove_main_test_tree(repo_root)
+  ensure_main_test_dir(repo_root)
+  ensure_main_test_dir(repo_root + "/.github")
+  ensure_main_test_dir(repo_root + "/.github/workflows")
+  @xfs.write_string_to_file(
+    repo_root + "/.github/workflows/ci.yml",
+    "name: ci\n'on':\n  push:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ci\n",
+  )
+  @xfs.write_string_to_file(
+    repo_root + "/.github/workflows/lint.yaml",
+    "'on':\n  push:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo lint\n",
+  )
+  let records = collect_workflow_list_records(
+    main_test_absolute_path(repo_root),
+  )
+  let list_text = format_workflow_list_text(records)
+  inspect(list_text.contains("ci\t.github/workflows/ci.yml"), content="true")
+  inspect(
+    list_text.contains("lint\t.github/workflows/lint.yaml"),
+    content="true",
+  )
+  let list_json_text = workflow_list_json(records)
+  inspect(list_json_text.contains("\"name\": \"ci\""), content="true")
+  inspect(
+    list_json_text.contains("\"path\": \".github/workflows/lint.yaml\""),
+    content="true",
+  )
+  let exit_code = handle_workflow_read_command({
+    action: "list",
+    repo_root: Some(main_test_absolute_path(repo_root)),
+    json_output: true,
+  })
+  inspect(exit_code, content="0")
 }
 
 ///|

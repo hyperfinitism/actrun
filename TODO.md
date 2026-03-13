@@ -77,7 +77,7 @@
 今の positional CLI を product にする段階。最終的には local runner を `gh` ライクに操作できるようにする。
 
 - [ ] command family の導入
-  - [ ] `action_runner workflow list`
+  - [x] `action_runner workflow list`
   - [ ] `action_runner workflow run <workflow>`
   - [x] `action_runner run list`
   - [x] `action_runner run view <run-id>`

@@ -74,6 +74,19 @@ struct CacheReadParseResult {
 }
 
 ///|
+struct WorkflowReadOptions {
+  action : String
+  repo_root : String?
+  json_output : Bool
+}
+
+///|
+struct WorkflowReadParseResult {
+  options : WorkflowReadOptions?
+  errors : Array[String]
+}
+
+///|
 struct RunRecord {
   run_id : String
   workflow_name : String
@@ -129,8 +142,14 @@ struct CacheListRecord {
 }
 
 ///|
+struct WorkflowListRecord {
+  name : String
+  path : String
+}
+
+///|
 fn usage_text() -> String {
-  "Usage: action_runner <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner run list [--run-root <run_root>] [--json]\n       action_runner run view <run-id> [--run-root <run_root>] [--json]\n       action_runner run watch <run-id> [--run-root <run_root>] [--json]\n       action_runner run logs <run-id> [--run-root <run_root>] [--task <task-id>]\n       action_runner run download <run-id> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner artifact list <run-id> [--run-root <run_root>] [--json]\n       action_runner artifact download <run-id> --name <artifact-name> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner cache list [--cache-root <cache_root>] [--key <cache-key>] [--workspace-key <workspace_key>] [--json]\n       action_runner cache prune [--cache-root <cache_root>] --key <cache-key> [--workspace-key <workspace_key>] [--json]"
+  "Usage: action_runner <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner workflow list [--repo <repo_root>] [--json]\n       action_runner run list [--run-root <run_root>] [--json]\n       action_runner run view <run-id> [--run-root <run_root>] [--json]\n       action_runner run watch <run-id> [--run-root <run_root>] [--json]\n       action_runner run logs <run-id> [--run-root <run_root>] [--task <task-id>]\n       action_runner run download <run-id> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner artifact list <run-id> [--run-root <run_root>] [--json]\n       action_runner artifact download <run-id> --name <artifact-name> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>]\n       action_runner cache list [--cache-root <cache_root>] [--key <cache-key>] [--workspace-key <workspace_key>] [--json]\n       action_runner cache prune [--cache-root <cache_root>] --key <cache-key> [--workspace-key <workspace_key>] [--json]"
 }
 
 ///|
@@ -568,6 +587,25 @@ fn sorted_dir_entries(path : String) -> Array[String] {
 }
 
 ///|
+fn path_file_name(path : String) -> String {
+  let parts : Array[String] = []
+  for part in path.split("/") {
+    parts.push(part.to_string())
+  }
+  if parts.length() == 0 {
+    ""
+  } else {
+    parts[parts.length() - 1]
+  }
+}
+
+///|
+fn workflow_name_from_path(path : String) -> String {
+  let name = path_file_name(path)
+  name.split(".").next().unwrap_or("").to_string()
+}
+
+///|
 fn run_store_is_dir(path : String) -> Bool {
   try @xfs.is_dir(path) catch {
     _ => false
@@ -786,6 +824,72 @@ fn collect_run_caches(workspace_root : String) -> Array[RunCacheRecord] {
     })
   }
   caches
+}
+
+///|
+fn workflow_list_record_json(entry : WorkflowListRecord) -> String {
+  "{ " +
+  "\"name\": " +
+  json_string(entry.name) +
+  ", " +
+  "\"path\": " +
+  json_string(entry.path) +
+  " }"
+}
+
+///|
+fn workflow_list_json(entries : Array[WorkflowListRecord]) -> String {
+  let items : Array[String] = []
+  for entry in entries {
+    items.push(workflow_list_record_json(entry))
+  }
+  "[" + items.join(", ") + "]"
+}
+
+///|
+fn format_workflow_list_text(entries : Array[WorkflowListRecord]) -> String {
+  let lines : Array[String] = []
+  for entry in entries {
+    lines.push(entry.name + "\t" + entry.path)
+  }
+  if lines.length() == 0 {
+    ""
+  } else {
+    lines.join("\n") + "\n"
+  }
+}
+
+///|
+fn collect_workflow_list_records(
+  repo_root : String,
+) -> Array[WorkflowListRecord] {
+  let workflow_dir = join_path(repo_root, ".github/workflows")
+  if not(@xfs.path_exists(workflow_dir)) {
+    return []
+  }
+  let records : Array[WorkflowListRecord] = []
+  for entry in sorted_dir_entries(workflow_dir) {
+    if not(entry.has_suffix(".yml")) && not(entry.has_suffix(".yaml")) {
+      continue
+    }
+    let relative_path = ".github/workflows/" + entry
+    let absolute_path = join_path(repo_root, relative_path)
+    let name = match read_text(absolute_path) {
+      Some(text) =>
+        match @ar.parse_workflow_yaml(text).workflow {
+          Some(workflow) =>
+            if workflow.name.length() > 0 {
+              workflow.name
+            } else {
+              workflow_name_from_path(relative_path)
+            }
+          None => workflow_name_from_path(relative_path)
+        }
+      None => workflow_name_from_path(relative_path)
+    }
+    records.push({ name, path: relative_path })
+  }
+  records
 }
 
 ///|
@@ -1524,6 +1628,48 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
 }
 
 ///|
+fn parse_workflow_read_args(args : Array[String]) -> WorkflowReadParseResult {
+  let errors : Array[String] = []
+  if args.length() < 3 {
+    return { options: None, errors: ["workflow subcommand requires an action"] }
+  }
+  let action = args[2]
+  if action != "list" {
+    return { options: None, errors: ["unknown workflow subcommand: " + action] }
+  }
+  let mut repo_root : String? = None
+  let mut json_output = false
+  let mut index = 3
+  while index < args.length() {
+    let arg = args[index]
+    if arg == "--json" {
+      json_output = true
+      index += 1
+      continue
+    }
+    if arg == "--repo" {
+      if index + 1 >= args.length() {
+        errors.push("missing value for --repo")
+        break
+      }
+      repo_root = Some(args[index + 1])
+      index += 2
+      continue
+    }
+    if arg == "--help" {
+      errors.push(usage_text())
+      break
+    }
+    errors.push("unknown option: " + arg)
+    index += 1
+  }
+  if errors.length() > 0 {
+    return { options: None, errors }
+  }
+  { options: Some({ action, repo_root, json_output }), errors: [] }
+}
+
+///|
 fn print_errors(errors : Array[String]) -> Unit {
   for err in errors {
     println("error: " + err)
@@ -1977,6 +2123,25 @@ fn format_run_logs_text(
 }
 
 ///|
+fn handle_workflow_read_command(options : WorkflowReadOptions) -> Int {
+  if options.action != "list" {
+    print_errors(["unknown workflow subcommand: " + options.action])
+    return 1
+  }
+  let repo_root = absolute_run_store_path(options.repo_root.unwrap_or("."))
+  let records = collect_workflow_list_records(repo_root)
+  if options.json_output {
+    println(workflow_list_json(records))
+    return 0
+  }
+  let text = format_workflow_list_text(records)
+  if text.length() > 0 {
+    println(text.trim_end(chars="\n").to_string())
+  }
+  0
+}
+
+///|
 fn handle_artifact_read_command(options : ArtifactReadOptions) -> Int {
   let run_root = options.run_root.unwrap_or(default_run_root())
   let run_dir = join_path(run_root, options.run_id)
@@ -2353,6 +2518,22 @@ fn print_skipped_report(workflow_name : String, run_id : String) -> Unit {
 #cfg(target="native")
 async fn main {
   let cli_args = @xsys.get_cli_args()
+  if cli_args.length() > 1 && cli_args[1] == "workflow" {
+    let parsed_workflow_args = parse_workflow_read_args(cli_args)
+    if parsed_workflow_args.errors.length() > 0 {
+      print_errors(parsed_workflow_args.errors)
+      @xsys.exit(1)
+    }
+    guard parsed_workflow_args.options is Some(workflow_options) else {
+      print_errors([usage_text()])
+      @xsys.exit(1)
+    }
+    let exit_code = handle_workflow_read_command(workflow_options)
+    if exit_code != 0 {
+      @xsys.exit(exit_code)
+    }
+    return
+  }
   if cli_args.length() > 1 && cli_args[1] == "run" {
     let parsed_run_args = parse_run_read_args(cli_args)
     if parsed_run_args.errors.length() > 0 {

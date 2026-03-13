@@ -1181,6 +1181,35 @@ async fn run_store_basic() -> Unit {
 
 ///|
 #cfg(target="native")
+async fn run_workflow_list_basic() -> Unit {
+  let scenario = "workflow-list-basic"
+  let workspace = e2e_prepare_copied_dir(
+    "_build/e2e/workspaces",
+    scenario,
+    e2e_fixture_dir(scenario),
+  )
+  let result = e2e_run_cli(["workflow", "list", "--repo", workspace])
+  e2e_expect_ok(result, scenario)
+  e2e_expect_contains(result.stdout, "ci\t.github/workflows/ci.yml", scenario)
+  e2e_expect_contains(
+    result.stdout,
+    "lint\t.github/workflows/lint.yaml",
+    scenario,
+  )
+  let json_result = e2e_run_cli([
+    "workflow", "list", "--repo", workspace, "--json",
+  ])
+  e2e_expect_ok(json_result, scenario + " json")
+  e2e_expect_contains(json_result.stdout, "\"name\": \"ci\"", scenario)
+  e2e_expect_contains(
+    json_result.stdout,
+    "\"path\": \".github/workflows/lint.yaml\"",
+    scenario,
+  )
+}
+
+///|
+#cfg(target="native")
 async fn run_local_composite_nested() -> Unit {
   let scenario = "local-composite-nested"
   let workspace = e2e_prepare_copied_dir(
@@ -5109,6 +5138,10 @@ async fn main {
   println("e2e: run-store-basic")
   run_store_basic()
   println("e2e: run-store-basic ok")
+
+  println("e2e: workflow-list-basic")
+  run_workflow_list_basic()
+  println("e2e: workflow-list-basic ok")
 
   println("e2e: local-composite-nested")
   run_local_composite_nested()
