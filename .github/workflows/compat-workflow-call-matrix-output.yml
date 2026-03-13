@@ -1,0 +1,32 @@
+name: Compat Workflow Call Matrix Output
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/compat-workflow-call-matrix-output.yml
+      - .github/workflows/__compat_reusable_matrix_output.yml
+
+jobs:
+  call:
+    strategy:
+      matrix:
+        label: [alpha, beta]
+    uses: ./.github/workflows/__compat_reusable_matrix_output.yml
+    with:
+      label: ${{ matrix.label }}
+
+  report:
+    needs: [call]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build report
+        shell: bash
+        run: |
+          mkdir -p report
+          printf '%s' "${{ needs.call.outputs.result }}" > report/result.txt
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-workflow-call-matrix-output-report
+          path: report/result.txt

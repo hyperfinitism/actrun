@@ -2667,7 +2667,7 @@ async test "executor: builtin setup-node registry-url exports npm auth config" {
   inspect(verify.status, content="success")
   inspect(
     verify.stdout.trim(chars=" \n\r\t").to_string(),
-    content="XXXXX-XXXXX-XXXXX-XXXXX|yes|//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN};registry=https://registry.npmjs.org/",
+    content="XXXXX-XXXXX-XXXXX-XXXXX|yes|//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN};registry=https://registry.npmjs.org/;",
   )
 }
 
@@ -4255,4 +4255,78 @@ async test "executor: github repo docker action lifecycle shares GITHUB_STATE ac
     @xfs.read_file_to_string(workspace + "/post.txt"),
     content="main|" + workspace,
   )
+}
+
+///|
+#cfg(target="native")
+fn check_no_workspace_entries(dir : String, workspace : String) -> Bool {
+  let abs_dir = executor_test_absolute_path(dir)
+  if not(try @xfs.is_dir(abs_dir) catch { _ => false } noraise { v => v }) {
+    return true
+  }
+  let entries = try @xfs.read_dir(abs_dir) catch {
+    _ => []
+  } noraise {
+    value => value
+  }
+  // workspace key is the sanitized absolute path
+  let workspace_key = workspace
+    .replace_all(old="/", new="__")
+    .replace_all(old=":", new="_")
+  for entry in entries {
+    if entry.has_prefix(workspace_key) {
+      return false
+    }
+  }
+  true
+}
+
+///|
+#cfg(target="native")
+async test "security: file_commands and runner_temp are cleaned up after run" {
+  let workspace = prepare_workspace("security-cleanup")
+  let workflow = new_workflow("ci", [
+    new_job(
+      "build",
+      [
+        new_run_step(
+          "write-secret",
+          "printf '%s' 'SECRET_TOKEN_VALUE' > secret.txt\nprintf '%s' 'token=secret123' >> \"$GITHUB_ENV\"",
+        ),
+      ],
+    ),
+  ])
+  let lowered = lower_push_workflow_in_workspace(workflow, workspace)
+  inspect(lowered.errors, content="[]")
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+  cleanup_run_temp_files(workspace)
+  assert_true(
+    check_no_workspace_entries("_build/action_runner/file_commands", workspace),
+  )
+  assert_true(
+    check_no_workspace_entries("_build/action_runner/runner_temp", workspace),
+  )
+}
+
+///|
+#cfg(target="native")
+async test "security: step script files are not world-readable" {
+  let workspace = prepare_workspace("security-permissions")
+  let workflow = new_workflow("ci", [
+    new_job(
+      "build",
+      [
+        new_run_step(
+          "check-perms",
+          "perms=$(stat -f '%Lp' \"$GITHUB_ENV\") && [ \"$perms\" != '666' ]",
+          shell=Some("bash"),
+        ),
+      ],
+    ),
+  ])
+  let lowered = lower_push_workflow_in_workspace(workflow, workspace)
+  inspect(lowered.errors, content="[]")
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
 }

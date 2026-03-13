@@ -330,7 +330,7 @@ test "cli: reject invalid workspace mode" {
 
   inspect(
     result.errors,
-    content="[\"workspace mode must be one of: worktree, tmp, docker\"]",
+    content="[\"workspace mode must be one of: local, worktree, tmp, docker\"]",
   )
 }
 
@@ -345,7 +345,7 @@ test "cli: default workspace mode depends on repo mode" {
     ]),
   )
 
-  inspect(resolved_workspace_mode(local_options), content="worktree")
+  inspect(resolved_workspace_mode(local_options), content="local")
   inspect(resolved_workspace_mode(repo), content="tmp")
 }
 
@@ -859,4 +859,169 @@ test "cli: event file enables trigger checks" {
   )
 
   inspect(should_check_trigger(options), content="true")
+}
+
+///|
+#cfg(target="native")
+async fn setup_workspace_test_repo(name : String) -> String {
+  ensure_main_test_dir("_build")
+  ensure_main_test_dir("_build/test-main")
+  let repo_root = "_build/test-main/" + name
+  remove_main_test_tree(repo_root)
+  ensure_main_test_dir(repo_root)
+  let (code, _, _) = @process.collect_output(
+    "git", ["init", "-q"], cwd=repo_root,
+  )
+  assert_eq(code, 0)
+  let (code2, _, _) = @process.collect_output(
+    "git",
+    ["config", "user.name", "test"],
+    cwd=repo_root,
+  )
+  assert_eq(code2, 0)
+  let (code3, _, _) = @process.collect_output(
+    "git",
+    ["config", "user.email", "test@test.com"],
+    cwd=repo_root,
+  )
+  assert_eq(code3, 0)
+  @xfs.write_string_to_file(repo_root + "/hello.txt", "hello\n")
+  let (code4, _, _) = @process.collect_output(
+    "git", ["add", "."], cwd=repo_root,
+  )
+  assert_eq(code4, 0)
+  let (code5, _, _) = @process.collect_output(
+    "git",
+    ["commit", "-q", "-m", "init"],
+    cwd=repo_root,
+  )
+  assert_eq(code5, 0)
+  main_test_absolute_path(repo_root)
+}
+
+///|
+#cfg(target="native")
+async test "workspace: worktree mode creates and cleans up git worktree" {
+  let repo_root = setup_workspace_test_repo("ws-worktree")
+  let workspace_base = "_build/test-main/ws-worktree-out"
+  remove_main_test_tree(workspace_base)
+  ensure_main_test_dir(workspace_base)
+  let (ws, errors) = setup_local_workspace("worktree", repo_root, workspace_base)
+  inspect(errors, content="[]")
+  guard ws is Some(workspace) else { abort("workspace setup failed") }
+  inspect(workspace.cleanup_mode, content="worktree")
+  assert_true(@xfs.path_exists(workspace.execution_root))
+  assert_true(
+    @xfs.path_exists(workspace.execution_root + "/hello.txt"),
+  )
+  inspect(
+    @xfs.read_file_to_string(workspace.execution_root + "/hello.txt"),
+    content="hello\n",
+  )
+  cleanup_local_workspace(workspace)
+  assert_false(@xfs.path_exists(workspace.execution_root))
+}
+
+///|
+#cfg(target="native")
+async test "workspace: tmp mode creates and cleans up cloned directory" {
+  let repo_root = setup_workspace_test_repo("ws-tmp")
+  let workspace_base = "_build/test-main/ws-tmp-out"
+  remove_main_test_tree(workspace_base)
+  ensure_main_test_dir(workspace_base)
+  let (ws, errors) = setup_local_workspace("tmp", repo_root, workspace_base)
+  inspect(errors, content="[]")
+  guard ws is Some(workspace) else { abort("workspace setup failed") }
+  inspect(workspace.cleanup_mode, content="tmp")
+  assert_true(@xfs.path_exists(workspace.execution_root))
+  assert_true(
+    @xfs.path_exists(workspace.execution_root + "/hello.txt"),
+  )
+  inspect(
+    @xfs.read_file_to_string(workspace.execution_root + "/hello.txt"),
+    content="hello\n",
+  )
+  assert_true(@xfs.path_exists(workspace.execution_root + "/.git"))
+  cleanup_local_workspace(workspace)
+  assert_false(@xfs.path_exists(workspace.execution_root))
+}
+
+///|
+#cfg(target="native")
+async test "workspace: local mode uses source root directly" {
+  let (ws, errors) = setup_local_workspace("local", "/some/path", "/unused")
+  inspect(errors, content="[]")
+  guard ws is Some(workspace) else { abort("workspace setup failed") }
+  inspect(workspace.execution_root, content="/some/path")
+  inspect(workspace.cleanup_mode, content="none")
+}
+
+///|
+fn json_has_field(json_text : String, field : String) -> Bool {
+  json_text.contains("\"" + field + "\":")
+}
+
+///|
+test "cli: run.json schema has all required top-level fields" {
+  let required_fields : Array[String] = [
+    "run_id", "workflow_name", "workflow_path", "workspace_root",
+    "workspace_mode", "started_at_ms", "finished_at_ms", "state",
+    "ok", "exit_code", "repository", "ref_name", "before_sha",
+    "after_sha", "changed_paths", "order", "issues", "steps",
+    "tasks", "jobs", "artifacts", "caches",
+  ]
+  let record : RunRecord = {
+    run_id: "run-1",
+    workflow_name: "ci",
+    workflow_path: ".github/workflows/ci.yml",
+    workspace_root: "/tmp",
+    workspace_mode: "local",
+    started_at_ms: 1000UL,
+    finished_at_ms: 2000UL,
+    state: "completed",
+    ok: true,
+    exit_code: 0,
+    repository: "owner/repo",
+    ref_name: "main",
+    before_sha: "aaa",
+    after_sha: "bbb",
+    changed_paths: [],
+  }
+  let json_text = run_record_json(record)
+  for field in required_fields {
+    assert_true(json_has_field(json_text, field))
+  }
+}
+
+///|
+test "cli: job JSON schema has required fields" {
+  let job_json = run_job_json({
+    id: "build",
+    status: "success",
+    needs: ["setup"],
+    task_ids: ["build/test"],
+  })
+  for field in (["id", "status", "needs", "task_ids"] : Array[String]) {
+    assert_true(json_has_field(job_json, field))
+  }
+}
+
+///|
+test "cli: artifact JSON schema has required fields" {
+  let artifact_json = run_artifact_json({ name: "report", files: ["result.txt"] })
+  for field in (["name", "files"] : Array[String]) {
+    assert_true(json_has_field(artifact_json, field))
+  }
+}
+
+///|
+test "cli: cache JSON schema has required fields" {
+  let cache_json = run_cache_json({
+    key: "cache-key",
+    sequence: Some(1),
+    files: ["data.txt"],
+  })
+  for field in (["key", "sequence", "files"] : Array[String]) {
+    assert_true(json_has_field(cache_json, field))
+  }
 }

@@ -1014,6 +1014,29 @@ fn runner_secrets_context() -> Map[String, String] {
 }
 
 ///|
+pub fn mask_secrets(text : String, secret_values : Array[String]) -> String {
+  let mut result = text
+  for value in secret_values {
+    if value.length() > 0 {
+      result = result.replace_all(old=value, new="***")
+    }
+  }
+  result
+}
+
+///|
+pub fn collect_secret_values() -> Array[String] {
+  let values : Array[String] = []
+  let prefix = "ACTION_RUNNER_SECRET_"
+  for key, value in @xsys.get_env_vars() {
+    if key.has_prefix(prefix) && key.length() > prefix.length() && value.length() > 0 {
+      values.push(value)
+    }
+  }
+  values
+}
+
+///|
 fn service_port_segment_value(value : String) -> String {
   let trimmed = value.trim(chars=" \t\r\n").to_string()
   match trimmed.find("/") {
@@ -1399,23 +1422,28 @@ async fn ensure_container_registry_login(
   match container.credentials {
     Some(credentials) => {
       let login_args : Array[String] = [
-        "login",
-        "-u",
-        credentials.username,
-        "-p",
-        credentials.password,
+        "login", "--password-stdin", "-u", credentials.username,
       ]
       match container_registry_host(container.image) {
         Some(registry) => login_args.push(registry)
         None => ()
       }
+      let (stdin_input, stdin_writer) = @process.write_to_process()
+      stdin_writer.write(@utf8.encode(credentials.password))
+      stdin_writer.close()
       let (login_code, _, login_stderr) = @process.collect_output(
         docker_bin,
         login_args,
+        stdin=stdin_input,
         cwd=workspace_abs,
       )
       if login_code != 0 {
-        Some(trim_exec_output(login_stderr.text()))
+        // Avoid leaking credentials in error messages
+        let stderr_text = trim_exec_output(login_stderr.text())
+        let safe_message = mask_secrets(
+          stderr_text, [credentials.password, credentials.username],
+        )
+        Some(safe_message)
       } else {
         None
       }
@@ -1524,13 +1552,26 @@ fn resolve_job_container_spec(
 ///|
 async fn cleanup_job_services_native(
   started : Array[StartedJobService],
-) -> Unit {
+) -> Map[String, String] {
   let service_networks : Map[String, (String, String)] = {}
+  let service_logs : Map[String, String] = {}
   for service in started {
     match service.network_name {
       Some(name) if name.length() > 0 =>
         service_networks[name] = (service.docker_bin, service.workspace_abs)
       _ => ()
+    }
+    // Capture service logs before removal
+    let (log_code, log_stdout, _) = @process.collect_output(
+      service.docker_bin,
+      ["logs", service.name],
+      cwd=service.workspace_abs,
+    )
+    if log_code == 0 {
+      let log_text = log_stdout.text()
+      if log_text.length() > 0 {
+        service_logs[service.name] = log_text
+      }
     }
     ignore(
       @process.collect_output(
@@ -1550,6 +1591,7 @@ async fn cleanup_job_services_native(
       ),
     )
   }
+  service_logs
 }
 
 ///|
@@ -1696,7 +1738,7 @@ async fn start_job_services_native(
     )
     match ensure_container_registry_login(docker_bin, workspace_abs, resolved) {
       Some(message) => {
-        cleanup_job_services_native(started)
+        ignore(cleanup_job_services_native(started))
         cleanup_job_service_network_native(
           docker_bin, workspace_abs, network_name,
         )
@@ -1743,7 +1785,7 @@ async fn start_job_services_native(
       cwd=workspace_abs,
     )
     if code != 0 {
-      cleanup_job_services_native(started)
+      ignore(cleanup_job_services_native(started))
       cleanup_job_service_network_native(
         docker_bin, workspace_abs, network_name,
       )
@@ -1767,7 +1809,7 @@ async fn start_job_services_native(
           service_id, container_name, docker_bin, workspace_abs,
         ) {
         Some(message) => {
-          cleanup_job_services_native(started)
+          ignore(cleanup_job_services_native(started))
           cleanup_job_service_network_native(
             docker_bin, workspace_abs, network_name,
           )
@@ -2540,6 +2582,18 @@ fn parse_checkout_submodules(value : String) -> String {
 }
 
 ///|
+fn parse_checkout_bool_true_default(value : String) -> Bool {
+  let normalized = value.trim(chars=" \t\r\n").to_lower()
+  normalized != "false" && normalized != "0" && normalized != "no"
+}
+
+///|
+fn parse_checkout_bool_false_default(value : String) -> Bool {
+  let normalized = value.trim(chars=" \t\r\n").to_lower()
+  normalized == "true" || normalized == "1" || normalized == "yes"
+}
+
+///|
 fn parse_cache_lookup_only(value : String) -> Bool {
   let normalized = value.trim(chars=" \t\r\n").to_lower()
   normalized == "true" || normalized == "1" || normalized == "yes"
@@ -2649,6 +2703,66 @@ fn normalize_setup_node_version(
 }
 
 ///|
+fn read_node_version_from_file(file_path : String) -> String {
+  let content = try @xfs.read_file_to_string(file_path) catch {
+    _ => return ""
+  } noraise {
+    value => value
+  }
+  let trimmed = content.trim(chars=" \t\r\n").to_string()
+  if trimmed.length() == 0 {
+    return ""
+  }
+  // .nvmrc / .node-version: single line with version
+  if file_path.has_suffix(".nvmrc") ||
+    file_path.has_suffix(".node-version") ||
+    file_path.has_suffix(".tool-versions") {
+    // .tool-versions: find "nodejs <version>" line
+    if file_path.has_suffix(".tool-versions") {
+      for line_view in trimmed.split("\n") {
+        let line = line_view.trim(chars=" \t\r").to_string()
+        if line.has_prefix("nodejs ") || line.has_prefix("nodejs\t") {
+          return exec_text_slice(line, 7, line.length())
+            .trim(chars=" \t\r\n")
+            .to_string()
+        }
+      }
+      return ""
+    }
+    // First non-empty line
+    for line_view in trimmed.split("\n") {
+      let line = line_view.trim(chars=" \t\r").to_string()
+      if line.length() > 0 && not(line.has_prefix("#")) {
+        return line
+      }
+    }
+    return ""
+  }
+  // package.json: extract engines.node
+  if file_path.has_suffix("package.json") {
+    let parsed = try @json.parse(trimmed) catch {
+      _ => return ""
+    } noraise {
+      value => value
+    }
+    match parsed {
+      Object(fields) =>
+        match fields.get("engines") {
+          Some(Object(engines)) =>
+            match engines.get("node") {
+              Some(String(version)) => return version
+              _ => return ""
+            }
+          _ => return ""
+        }
+      _ => return ""
+    }
+  }
+  // Default: treat entire content as version
+  trimmed
+}
+
+///|
 fn checkout_temp_root(workspace_root : String, task_id : String) -> String {
   ignore(ensure_exec_dir_recursive("_build/action_runner/checkouts"))
   let workspace_key = sanitize_task_id(
@@ -2712,8 +2826,19 @@ async fn exec_git_clone_into(
   temp_root : String,
   fetch_depth : Int,
   ref_name? : String = "",
+  fetch_tags? : Bool = true,
+  show_progress? : Bool = false,
 ) -> (Int, String, String) {
-  let args : Array[String] = ["clone", "--quiet", "--no-local"]
+  let args : Array[String] = ["clone"]
+  if not(show_progress) {
+    args.push("--quiet")
+  } else {
+    args.push("--progress")
+  }
+  args.push("--no-local")
+  if not(fetch_tags) {
+    args.push("--no-tags")
+  }
   if fetch_depth > 0 {
     args.push("--depth")
     args.push(fetch_depth.to_string())
@@ -2819,6 +2944,11 @@ async fn exec_git_clone_checkout(
   fetch_depth : Int,
   clean : Bool,
   resolved_plan_env : Map[String, String],
+  fetch_tags? : Bool = true,
+  show_progress? : Bool = false,
+  persist_credentials? : Bool = true,
+  set_safe_directory? : Bool = true,
+  lfs? : Bool = false,
 ) -> TaskRunReport? {
   let temp_root = checkout_temp_root(workspace_root, plan.id)
   let git_bin = configured_exec_bin(
@@ -2838,6 +2968,8 @@ async fn exec_git_clone_checkout(
       temp_root,
       fetch_depth,
       ref_name=checkout_ref,
+      fetch_tags~,
+      show_progress~,
     )
     if branch_code == 0 {
       clone_ready = true
@@ -2848,7 +2980,7 @@ async fn exec_git_clone_checkout(
       )
       if fetch_depth == 0 {
         let (fallback_code, fallback_stdout, fallback_stderr) = exec_git_clone_into(
-          git_bin, source_root, temp_root, 0,
+          git_bin, source_root, temp_root, 0, fetch_tags~, show_progress~,
         )
         if fallback_code != 0 {
           return Some(
@@ -2883,7 +3015,7 @@ async fn exec_git_clone_checkout(
   }
   if not(clone_ready) {
     let (clone_code, clone_stdout, clone_stderr) = exec_git_clone_into(
-      git_bin, source_root, temp_root, fetch_depth,
+      git_bin, source_root, temp_root, fetch_depth, fetch_tags~, show_progress~,
     )
     if clone_code != 0 {
       return Some(
@@ -2904,7 +3036,7 @@ async fn exec_git_clone_checkout(
         if fetch_depth > 0 {
           ignore(exec_remove_tree(temp_root))
           let (full_clone_code, full_clone_stdout, full_clone_stderr) = exec_git_clone_into(
-            git_bin, source_root, temp_root, 0,
+            git_bin, source_root, temp_root, 0, fetch_tags~, show_progress~,
           )
           if full_clone_code != 0 {
             return Some(
@@ -2959,6 +3091,42 @@ async fn exec_git_clone_checkout(
           exec_command_message(
             submodule_stdout, submodule_stderr, "git submodule update failed",
           ),
+        ),
+      )
+    }
+  }
+  // set-safe-directory
+  if set_safe_directory {
+    let abs_checkout = absolute_exec_path(checkout_root)
+    ignore(
+      exec_git_command_text(
+        git_bin,
+        ["config", "--global", "--add", "safe.directory", abs_checkout],
+        temp_root,
+      ),
+    )
+  }
+  // persist-credentials: false removes the credential helper
+  if not(persist_credentials) {
+    ignore(
+      exec_git_command_text(
+        git_bin,
+        ["config", "--local", "--unset-all", "credential.helper"],
+        temp_root,
+      ),
+    )
+  }
+  // lfs
+  if lfs {
+    let (lfs_code, lfs_stdout, lfs_stderr) = exec_git_command_text(
+      git_bin, ["lfs", "pull"], temp_root,
+    )
+    if lfs_code != 0 {
+      return Some(
+        task_report_failure(
+          plan,
+          workspace_root,
+          exec_command_message(lfs_stdout, lfs_stderr, "git lfs pull failed"),
         ),
       )
     }
@@ -3220,7 +3388,12 @@ async fn write_setup_node_shim(
 }
 
 ///|
-fn write_setup_node_npmrc(path : String, registry_url : String) -> Bool {
+fn write_setup_node_npmrc(
+  path : String,
+  registry_url : String,
+  always_auth? : Bool = false,
+  scope? : String = "",
+) -> Bool {
   let stripped = if registry_url.has_prefix("https://") {
     "//" + exec_text_slice(registry_url, 8, registry_url.length())
   } else if registry_url.has_prefix("http://") {
@@ -3228,10 +3401,16 @@ fn write_setup_node_npmrc(path : String, registry_url : String) -> Bool {
   } else {
     registry_url
   }
-  write_exec_text(
-    path,
-    stripped + ":_authToken=${NODE_AUTH_TOKEN}\n" + "registry=" + registry_url,
-  )
+  let mut content = stripped + ":_authToken=${NODE_AUTH_TOKEN}\n"
+  if scope.length() > 0 {
+    let scoped = if scope.has_prefix("@") { scope } else { "@" + scope }
+    content = content + scoped + ":registry=" + registry_url + "\n"
+  }
+  content = content + "registry=" + registry_url + "\n"
+  if always_auth {
+    content = content + "always-auth=true\n"
+  }
+  write_exec_text(path, content)
 }
 
 ///|
@@ -3243,6 +3422,10 @@ fn setup_node_cache_relative_path(cache_name : String) -> String {
 fn setup_node_default_dependency_paths(cache_name : String) -> Array[String] {
   if cache_name == "npm" {
     ["package-lock.json", "npm-shrinkwrap.json"]
+  } else if cache_name == "yarn" {
+    ["yarn.lock"]
+  } else if cache_name == "pnpm" {
+    ["pnpm-lock.yaml"]
   } else {
     []
   }
@@ -3368,6 +3551,30 @@ fn split_nonempty_lines(text : String) -> Array[String] {
     }
   }
   lines
+}
+
+///|
+fn normalize_cache_path(path : String) -> String {
+  let trimmed = path.trim(chars=" \t\r\n").to_string()
+  if trimmed.has_prefix("~/") {
+    let home = @xsys.get_env_var("HOME").unwrap_or("")
+    if home.length() > 0 {
+      return home + exec_text_slice(trimmed, 1, trimmed.length())
+    }
+  }
+  if trimmed == "~" {
+    return @xsys.get_env_var("HOME").unwrap_or(trimmed)
+  }
+  trimmed
+}
+
+///|
+fn normalize_cache_paths(paths : Array[String]) -> Array[String] {
+  let result : Array[String] = []
+  for path in paths {
+    result.push(normalize_cache_path(path))
+  }
+  result
 }
 
 ///|
@@ -3535,6 +3742,7 @@ fn artifact_collect_relative_files(
   current_abs : String,
   relative_prefix : String,
   files : Array[String],
+  include_hidden? : Bool = false,
 ) -> Unit {
   let entries = try @xfs.read_dir(current_abs) catch {
     _ => []
@@ -3543,6 +3751,9 @@ fn artifact_collect_relative_files(
   }
   entries.sort_by(String::lexical_compare)
   for entry in entries {
+    if not(include_hidden) && entry.has_prefix(".") {
+      continue
+    }
     let next_abs = artifact_path_join(current_abs, entry)
     let next_relative = if relative_prefix.length() == 0 {
       entry
@@ -3550,7 +3761,9 @@ fn artifact_collect_relative_files(
       relative_prefix + "/" + entry
     }
     if exec_is_dir(next_abs) {
-      artifact_collect_relative_files(next_abs, next_relative, files)
+      artifact_collect_relative_files(
+        next_abs, next_relative, files, include_hidden~,
+      )
     } else {
       files.push(next_relative)
     }
@@ -3579,13 +3792,16 @@ fn artifact_collect_absolute_files(
 }
 
 ///|
-fn artifact_workspace_relative_files(workspace_root : String) -> Array[String] {
+fn artifact_workspace_relative_files(
+  workspace_root : String,
+  include_hidden? : Bool = false,
+) -> Array[String] {
   let workspace_abs = absolute_exec_path(resolve_task_cwd(workspace_root, ""))
   let files : Array[String] = []
   if not(@xfs.path_exists(workspace_abs)) {
     return files
   }
-  artifact_collect_relative_files(workspace_abs, "", files)
+  artifact_collect_relative_files(workspace_abs, "", files, include_hidden~)
   files
 }
 
@@ -3645,11 +3861,14 @@ fn artifact_common_ancestor(paths : Array[String]) -> String {
 fn artifact_select_upload_files(
   workspace_root : String,
   upload_paths : Array[String],
+  include_hidden? : Bool = false,
 ) -> ArtifactUploadSelection {
   let included_roots : Array[String] = []
   let included_files : Map[String, Bool] = {}
   let excluded_patterns : Array[String] = []
-  let workspace_files = artifact_workspace_relative_files(workspace_root)
+  let workspace_files = artifact_workspace_relative_files(
+    workspace_root, include_hidden~,
+  )
   for raw_path in upload_paths {
     let path = raw_path.trim(chars=" \t\r\n").to_string()
     if path.has_prefix("!") {
@@ -3758,6 +3977,21 @@ async fn execute_builtin_checkout_native(
   let cone_mode = parse_checkout_cone_mode(
     resolved_plan_env.get("INPUT_SPARSE_CHECKOUT_CONE_MODE").unwrap_or("true"),
   )
+  let fetch_tags = parse_checkout_bool_true_default(
+    resolved_plan_env.get("INPUT_FETCH_TAGS").unwrap_or("false"),
+  )
+  let show_progress = parse_checkout_bool_true_default(
+    resolved_plan_env.get("INPUT_SHOW_PROGRESS").unwrap_or("true"),
+  )
+  let persist_credentials = parse_checkout_bool_true_default(
+    resolved_plan_env.get("INPUT_PERSIST_CREDENTIALS").unwrap_or("true"),
+  )
+  let set_safe_directory = parse_checkout_bool_true_default(
+    resolved_plan_env.get("INPUT_SET_SAFE_DIRECTORY").unwrap_or("true"),
+  )
+  let lfs = parse_checkout_bool_false_default(
+    resolved_plan_env.get("INPUT_LFS").unwrap_or("false"),
+  )
   let source_root = resolve_task_cwd(workspace_root, "")
   let checkout_root = if path_input.length() > 0 {
     resolve_task_cwd(workspace_root, path_input)
@@ -3768,6 +4002,7 @@ async fn execute_builtin_checkout_native(
     match
       exec_git_clone_checkout(
         plan, workspace_root, source_root, checkout_root, fetch_depth, clean, resolved_plan_env,
+        fetch_tags~, show_progress~, persist_credentials~, set_safe_directory~, lfs~,
       ) {
       Some(report) => return report
       None => ()
@@ -3806,16 +4041,13 @@ async fn execute_setup_node_native(
   let requested_node_file = resolved_plan_env
     .get("INPUT_NODE_VERSION_FILE")
     .unwrap_or("")
-  if requested_node_file.trim(chars=" \t\r\n").length() > 0 {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "setup-node node-version-file is not supported yet",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+  let node_version_from_file = if requested_node_file.trim(chars=" \t\r\n").length() > 0 {
+    let file_path = resolve_task_cwd(
+      workspace_root, requested_node_file.trim(chars=" \t\r\n").to_string(),
+    )
+    read_node_version_from_file(file_path)
+  } else {
+    ""
   }
   let configured_node_fallback = resolved_plan_env
     .get("ACTION_RUNNER_NODE_BIN")
@@ -3856,10 +4088,15 @@ async fn execute_setup_node_native(
     }
   }
   let actual_version = version_stdout.text().trim(chars=" \t\r\n").to_string()
-  let node_version = normalize_setup_node_version(
-    resolved_plan_env.get("INPUT_NODE_VERSION").unwrap_or(""),
-    actual_version,
-  )
+  let explicit_version = resolved_plan_env
+    .get("INPUT_NODE_VERSION")
+    .unwrap_or("")
+  let version_input = if explicit_version.trim(chars=" \t\r\n").length() > 0 {
+    explicit_version
+  } else {
+    node_version_from_file
+  }
+  let node_version = normalize_setup_node_version(version_input, actual_version)
   guard write_setup_node_shim(workspace_root, plan.id, node_bin, node_version)
     is Some(shim_dir) else {
     return {
@@ -3957,9 +4194,14 @@ async fn execute_setup_node_native(
     resolved_plan_env.get("INPUT_REGISTRY_URL").unwrap_or(""),
   )
   if registry_url.length() > 0 {
+    let always_auth = parse_checkout_bool_false_default(
+      resolved_plan_env.get("INPUT_ALWAYS_AUTH").unwrap_or("false"),
+    )
+    let scope = resolved_plan_env.get("INPUT_SCOPE").unwrap_or("")
+      .trim(chars=" \t\r\n").to_string()
     let npmrc_path = prepare_runner_temp_dir(plan.job_id, workspace_root) +
       "/.npmrc"
-    if not(write_setup_node_npmrc(npmrc_path, registry_url)) {
+    if not(write_setup_node_npmrc(npmrc_path, registry_url, always_auth~, scope~)) {
       return {
         report: task_report_failure(
           plan, workspace_root, "failed to write setup-node npm auth config",
@@ -4049,6 +4291,9 @@ fn execute_upload_artifact_native(
       plan, workspace_root, "upload-artifact requires with.name",
     )
   }
+  let include_hidden = parse_checkout_bool_false_default(
+    resolved_plan_env.get("INPUT_INCLUDE_HIDDEN_FILES").unwrap_or("false"),
+  )
   let upload_paths = split_nonempty_lines(path_input)
   if upload_paths.length() == 0 {
     return task_report_failure(
@@ -4058,7 +4303,9 @@ fn execute_upload_artifact_native(
   let artifact_root = artifact_store_root(workspace_root) +
     "/" +
     sanitize_task_id(name)
-  let selection = artifact_select_upload_files(workspace_root, upload_paths)
+  let selection = artifact_select_upload_files(
+    workspace_root, upload_paths, include_hidden~,
+  )
   let if_no_files_found = match
     parse_artifact_if_no_files_found(
       resolved_plan_env.get("INPUT_IF_NO_FILES_FOUND").unwrap_or(""),
@@ -4130,6 +4377,7 @@ fn execute_download_artifact_native(
   resolved_plan_env : Map[String, String],
 ) -> TaskRunReport {
   let name = resolved_plan_env.get("INPUT_NAME").unwrap_or("")
+  let pattern = resolved_plan_env.get("INPUT_PATTERN").unwrap_or("")
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
   let merge_multiple = parse_artifact_merge_multiple(
     resolved_plan_env.get("INPUT_MERGE_MULTIPLE").unwrap_or("false"),
@@ -4158,6 +4406,10 @@ fn execute_download_artifact_native(
     for entry in artifact_entries {
       let artifact_root = store_root + "/" + entry
       if not(exec_is_dir(artifact_root)) {
+        continue
+      }
+      if pattern.length() > 0 &&
+        not(artifact_path_matches(pattern, entry)) {
         continue
       }
       let target = if merge_multiple {
@@ -4225,7 +4477,7 @@ fn execute_save_cache_native(
       plan, workspace_root, "cache-save requires with.key",
     )
   }
-  let cache_paths = split_nonempty_lines(path_input)
+  let cache_paths = normalize_cache_paths(split_nonempty_lines(path_input))
   if cache_paths.length() == 0 {
     return task_report_failure(
       plan, workspace_root, "cache-save requires with.path",
@@ -6182,7 +6434,7 @@ pub async fn execute_lowered_native(
           remaining_job_tasks[plan.job_id] = next
           if next == 0 {
             match started_job_services.get(plan.job_id) {
-              Some(started) => cleanup_job_services_native(started)
+              Some(started) => ignore(cleanup_job_services_native(started))
               None => ()
             }
           }
@@ -6210,6 +6462,38 @@ pub async fn execute_lowered_native(
     steps,
     issues: [],
     task_reports: reports,
+  }
+}
+
+///|
+pub fn cleanup_run_temp_files(workspace_root : String) -> Unit {
+  let workspace_key = sanitize_task_id(
+    absolute_exec_path(resolve_task_cwd(workspace_root, "")),
+  )
+  cleanup_dir_entries_by_prefix(
+    "_build/action_runner/file_commands", workspace_key,
+  )
+  cleanup_dir_entries_by_prefix(
+    "_build/action_runner/runner_temp", workspace_key,
+  )
+}
+
+///|
+fn cleanup_dir_entries_by_prefix(dir : String, prefix : String) -> Unit {
+  let abs_dir = absolute_exec_path(dir)
+  if not(exec_is_dir(abs_dir)) {
+    return
+  }
+  let entries = try @xfs.read_dir(abs_dir) catch {
+    _ => []
+  } noraise {
+    value => value
+  }
+  for entry in entries {
+    if entry.has_prefix(prefix) {
+      let path = abs_dir + "/" + entry
+      ignore(exec_remove_tree(path))
+    }
   }
 }
 

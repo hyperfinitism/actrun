@@ -1,0 +1,17 @@
+name: e2e-shell-templates
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: bash-default
+        run: printf '%s' "bash-ok"
+      - id: bash-explicit
+        shell: bash
+        run: printf '%s' "bash-explicit-ok"
+      - id: sh
+        shell: sh
+        run: printf '%s' "sh-ok"
+      - id: custom-template
+        shell: bash {0}
+        run: printf '%s' "custom-ok"

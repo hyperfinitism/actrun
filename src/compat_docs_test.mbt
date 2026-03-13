@@ -823,7 +823,7 @@ async test "compat docs: setup-node configures node version and npm auth config"
   inspect(task.status, content="success")
   inspect(
     task.stdout,
-    content="<v20.19.5|v20.19.5|XXXXX-XXXXX-XXXXX-XXXXX|yes|//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN};registry=https://registry.npmjs.org/>",
+    content="<v20.19.5|v20.19.5|XXXXX-XXXXX-XXXXX-XXXXX|yes|//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN};registry=https://registry.npmjs.org/;>",
   )
 }
 

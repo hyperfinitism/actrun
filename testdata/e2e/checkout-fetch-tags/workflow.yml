@@ -1,0 +1,24 @@
+name: e2e-checkout-fetch-tags
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: with-tags
+        uses: actions/checkout@v4
+        with:
+          path: with-tags
+          fetch-tags: true
+          fetch-depth: 0
+      - id: without-tags
+        uses: actions/checkout@v4
+        with:
+          path: without-tags
+          fetch-tags: false
+          fetch-depth: 0
+      - id: verify
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          printf '%s' "$(git -C with-tags tag | wc -l | tr -d ' ')" > artifacts/with-tags.txt
+          printf '%s' "$(git -C without-tags tag | wc -l | tr -d ' ')" > artifacts/without-tags.txt

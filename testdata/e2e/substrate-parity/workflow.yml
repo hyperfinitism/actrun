@@ -1,0 +1,26 @@
+name: substrate-parity
+'on':
+  push:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: write
+        run: |
+          mkdir -p artifacts
+          printf '%s' "hello-from-step" > artifacts/result.txt
+          echo "STEP_VAR=from-env-file" >> "$GITHUB_ENV"
+      - id: read
+        run: |
+          printf '%s|%s' "$(cat artifacts/result.txt)" "${STEP_VAR}"
+          printf '%s' "substrate-summary" >> "$GITHUB_STEP_SUMMARY"
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-report
+          path: artifacts/result.txt
+      - id: cache
+        uses: actions/cache/save@v4
+        with:
+          key: substrate-parity-key
+          path: artifacts/result.txt

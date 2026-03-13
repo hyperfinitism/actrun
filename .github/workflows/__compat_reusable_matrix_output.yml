@@ -1,0 +1,21 @@
+name: Compat Reusable Matrix Output Callee
+
+on:
+  workflow_call:
+    inputs:
+      label:
+        required: true
+        type: string
+    outputs:
+      result:
+        value: ${{ jobs.probe.outputs.result }}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.capture.outputs.result }}
+    steps:
+      - id: capture
+        shell: bash
+        run: printf 'result=%s' "hello-${{ inputs.label }}" >> "$GITHUB_OUTPUT"

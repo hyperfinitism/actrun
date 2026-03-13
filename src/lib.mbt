@@ -557,6 +557,37 @@ pub struct WorkflowRunReport {
 }
 
 ///|
+pub fn mask_report_secrets(
+  report : WorkflowRunReport,
+  secret_values : Array[String],
+) -> WorkflowRunReport {
+  if secret_values.length() == 0 {
+    return report
+  }
+  let masked_tasks : Array[TaskRunReport] = []
+  for task in report.task_reports {
+    masked_tasks.push({
+      ..task,
+      stdout: mask_secrets(task.stdout, secret_values),
+      stderr: mask_secrets(task.stderr, secret_values),
+      summary: mask_secrets(task.summary, secret_values),
+    })
+  }
+  let masked_steps : Array[WorkflowStepReport] = []
+  for step in report.steps {
+    masked_steps.push({
+      ..step,
+      message: mask_secrets(step.message, secret_values),
+    })
+  }
+  {
+    ..report,
+    task_reports: masked_tasks,
+    steps: masked_steps,
+  }
+}
+
+///|
 pub fn find_workflow_step_report(
   report : WorkflowRunReport,
   id : String,

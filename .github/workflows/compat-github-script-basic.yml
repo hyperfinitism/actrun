@@ -1,0 +1,30 @@
+name: Compat GitHub Script Basic
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/__compat_github_script_basic__.trigger
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - id: script
+        name: Run GitHub Script
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.setOutput('result', 'hello-from-script')
+      - name: Build report
+        shell: bash
+        run: |
+          mkdir -p report
+          printf '%s' "${{ steps.script.outputs.result }}" > report/result.txt
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-github-script-basic-report
+          path: report/result.txt

@@ -1,6 +1,7 @@
 import {
   "mizchi/action_runner" @ar,
   "moonbitlang/async",
+  "moonbitlang/async/process" @process,
   "moonbitlang/core/env" @env,
   "moonbitlang/core/json" @json,
   "moonbitlang/core/strconv" @strconv,

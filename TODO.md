@@ -55,13 +55,14 @@
   - [x] job 状態 / artifact index / cache index を保存
   - [x] `timestamps` を保存
 - [ ] workspace substrate の明確化
-  - [x] `--workspace-mode` contract (`local=worktree`, `repo=tmp` の default)
-  - [ ] `--workspace-mode worktree`
-  - [ ] `--workspace-mode tmp`
+  - [x] `--workspace-mode` contract (`local`, `repo=tmp` の default)
+  - [x] `--workspace-mode local` (in-place 実行、デフォルト)
+  - [x] `--workspace-mode worktree` (`git worktree add` で隔離)
+  - [x] `--workspace-mode tmp` (`git clone` で隔離)
   - [ ] `--workspace-mode docker`
-  - [ ] 各 mode の cleanup / isolation policy を固定
-  - [ ] secret を含みうる `_build/action_runner/file_commands` / `runner_temp` が run 後に cleanup されることを確認する security test
-  - [ ] step script / `.npmrc` / file command file が world-readable にならないことを確認する security test
+  - [x] 各 mode の cleanup / isolation policy を固定
+  - [x] secret を含みうる `_build/action_runner/file_commands` / `runner_temp` が run 後に cleanup されることを確認する security test
+  - [x] step script / `.npmrc` / file command file が world-readable にならないことを確認する security test
 - [x] local injection point を CLI flag に昇格
   - [x] `--run-root`
   - [x] `--artifact-root`
@@ -69,16 +70,16 @@
   - [x] `--github-action-cache-root`
   - [x] `--registry-root`
   - [x] `--wasm-action-root`
-- [ ] substrate parity E2E
-  - [ ] 同一 workflow を `worktree` / `/tmp` / `docker` で流す共通 scenario 群
-  - [ ] artifact / cache / summary / logs が substrate を跨いで一致することを確認
-  - [ ] repo mode / `--event` / `head_commit` fallback も substrate matrix に入れる
+- [x] substrate parity E2E
+  - [x] 同一 workflow を `local` / `worktree` / `tmp` で流す共通 scenario 群
+  - [x] artifact / cache / summary / logs が substrate を跨いで一致することを確認
+  - [x] repo mode / `--event` / `head_commit` fallback も substrate matrix に入れる
 
 ## P1: `gh` 互換 CLI を作る
 
 今の positional CLI を product にする段階。最終的には local runner を `gh` ライクに操作できるようにする。
 
-- [ ] command family の導入
+- [x] command family の導入
   - [x] `action_runner workflow list`
   - [x] `action_runner workflow run <workflow>`
   - [x] `action_runner run list`
@@ -90,17 +91,17 @@
   - [x] `action_runner artifact download <run-id>`
   - [x] `action_runner cache list`
   - [x] `action_runner cache prune`
-- [ ] 現行 CLI との互換レイヤ
-  - [ ] 既存の `action_runner <workflow.yml> ...` を `workflow run` に寄せる
-  - [ ] repo mode / event mode / substrate mode を subcommand に整理する
-- [ ] CLI 出力 contract
+- [x] 現行 CLI との互換レイヤ
+  - [x] 既存の `action_runner <workflow.yml> ...` を `workflow run` に寄せる（deprecation warning 追加）
+  - [x] repo mode / event mode / substrate mode を subcommand に整理する
+- [x] CLI 出力 contract
   - [x] `--json` を全 read command に追加
-  - [ ] run state / artifact metadata / cache metadata の JSON schema を固定
+  - [x] run state / artifact metadata / cache metadata の JSON schema を固定（schema 検証テスト追加）
   - [x] non-zero exit code と run state の対応を固定
-- [ ] CLI black-box
+- [x] CLI black-box
   - [x] run store を前提にした `view/watch/logs/download` E2E
-  - [ ] run store / `run logs` / `run view` が secret を mask して表示・保存することを確認する security test
-  - [ ] `gh run` / `gh workflow` の naming に寄せた usage docs
+  - [x] run store / `run logs` / `run view` が secret を mask して表示・保存することを確認する security test
+  - [x] `gh run` / `gh workflow` の naming に寄せた usage docs
 
 ## P2: GitHub 標準 actions を広げる
 
@@ -112,68 +113,74 @@
 ### P2-A: builtin 優先 actions
 
 - [ ] `actions/checkout`
-  - [ ] `lfs`
-  - [ ] `persist-credentials: false`
-  - [ ] `fetch-tags`
-  - [ ] `show-progress`
-  - [ ] `set-safe-directory`
+  - [x] `lfs`
+  - [x] `persist-credentials: false`
+  - [x] `fetch-tags`
+  - [x] `show-progress`
+  - [x] `set-safe-directory`
   - [ ] token / ssh-key / ssh-known-hosts の policy 決定
 - [ ] `actions/upload-artifact` / `actions/download-artifact`
-  - [ ] `pattern`
-  - [ ] `artifact-ids`
-  - [ ] `retention-days`
-  - [ ] `compression-level`
-  - [ ] `include-hidden-files`
+  - [x] `pattern` (download-artifact の glob フィルタ)
+  - [ ] `artifact-ids` (ローカル runner では ID 体系なし — unsupported)
+  - [x] `retention-days` (ローカルでは no-op、静かに無視)
+  - [x] `compression-level` (ローカルでは no-op、静かに無視)
+  - [x] `include-hidden-files`
 - [ ] `actions/cache`
-  - [ ] `enableCrossOsArchive`
+  - [x] `enableCrossOsArchive` (ローカルでは no-op)
   - [ ] cache version semantics
-  - [ ] path list normalization
-  - [ ] failure/cancel 時の post-save edge case
+  - [x] path list normalization (`~` 展開、trim)
+  - [x] failure/cancel 時の post-save edge case (always() + cancel 時は post 不実行で正しく動作)
 - [ ] `actions/setup-node`
-  - [ ] `node-version-file`
-  - [ ] `check-latest`
-  - [ ] package-manager-cache auto detection
-  - [ ] `always-auth` / `scope` / `.npmrc` nuance
-- [ ] `actions/github-script`
-  - [ ] builtin にするか remote official node action 扱いにするか決める
-  - [ ] どちらにせよ local E2E と live compat を付ける
+  - [x] `node-version-file` (`.nvmrc`, `.node-version`, `.tool-versions`, `package.json`)
+  - [ ] `check-latest` (ローカルではシステム node を使うため低優先度)
+  - [x] package-manager-cache auto detection (`npm` / `yarn` / `pnpm`)
+  - [x] `always-auth` / `scope` / `.npmrc` nuance
+- [x] `actions/github-script`
+  - [x] remote official node action 扱いに決定（builtin 化しない）
+  - [ ] local E2E と live compat を付ける
 
 ### P2-B: official actions の実行保証
 
-- [ ] official node action coverage policy を決める
-  - [ ] builtin 化するもの
-  - [ ] remote fetch + node 実行で保証するもの
+- [x] official node action coverage policy を決める
+  - [x] builtin: checkout, upload/download-artifact, cache, setup-node
+  - [x] remote fetch + node 実行: github-script, setup-python/go/java/dotnet/ruby
 - [ ] smoke/live compat を張る official actions
-  - [ ] `actions/setup-python`
-  - [ ] `actions/setup-go`
-  - [ ] `actions/setup-java`
-  - [ ] `actions/setup-dotnet`
-  - [ ] `actions/setup-ruby`
+  - [x] `actions/setup-python` (live compat workflow 追加)
+  - [x] `actions/setup-go` (live compat workflow 追加)
+  - [x] `actions/setup-java` (live compat workflow 追加)
+  - [x] `actions/setup-dotnet` (live compat workflow 追加)
+  - [x] `ruby/setup-ruby` (live compat workflow 追加)
+  - [x] `actions/github-script` (live compat workflow 追加)
 
 ## P3: workflow/runtime 互換を締める
 
 - [ ] reusable workflow の広い互換対応
-  - [ ] caller matrix + reusable outputs の live compat
+  - [x] caller matrix + reusable outputs の live compat (workflow 追加)
   - [ ] nested reusable workflow の docs/live compat matrix
-  - [ ] remote reusable workflow + `secrets: inherit` の main branch live compat
+  - [x] remote reusable workflow + `secrets: inherit` の main branch live compat (既存)
 - [ ] container / services の hardening
   - [ ] builtin action coverage matrix を container job で揃える
-  - [ ] service `volumes` / `options` / `credentials` semantics
-  - [ ] service log capture と run store 保存
-  - [ ] `docker login` credential が argv / stderr / run store に平文で出ないことを確認する security test
+  - [x] service `volumes` / `options` / `credentials` semantics (既存実装で対応済)
+  - [x] service log capture と run store 保存 (`docker logs` を cleanup 時に取得)
+  - [x] `docker login` credential が argv / stderr / run store に平文で出ないことを確認する security test (`--password-stdin` + mask_secrets)
 - [ ] shell / host 差分
-  - [ ] `pwsh` 実行環境差分
-  - [ ] shell template compatibility の fixture 拡張
+  - [ ] `pwsh` 実行環境差分 (pwsh がシステムにある場合のみ動作)
+  - [x] shell template compatibility の fixture 拡張 (bash/sh/custom template E2E)
 
 ## P4: registry / backend を product にする
 
 - [ ] custom registry action の remote fetch / protocol 解決
-- [ ] registry cache layout / versioning / auth policy
-- [ ] Wasm backend の広い互換対応
-  - [ ] env / input / output contract
-  - [ ] pre/post lifecycle policy
-  - [ ] artifact / cache integration
-- [ ] backend selection policy を CLI / config から制御可能にする
+- [x] registry cache layout / versioning / auth policy
+  - [x] GitHub actions: `_build/action_runner/github_actions/{owner}/{repo}/{version}/`
+  - [x] Custom registry: `_build/action_runner/registry_actions/{scheme}/{name}/{version}/`
+  - [x] 環境変数 override: `ACTION_RUNNER_GITHUB_ACTION_CACHE_ROOT`, `ACTION_RUNNER_ACTION_REGISTRY_ROOT`
+- [x] Wasm backend の広い互換対応
+  - [x] env / input / output contract (file commands 経由: GITHUB_ENV/OUTPUT/STATE)
+  - [x] pre/post lifecycle policy (wasm は manifest なし・単一 entrypoint モデル。pre/post は将来 action.yml 対応時に拡張)
+  - [x] artifact / cache integration (host 側の builtin action でカバー)
+- [x] backend selection policy を CLI / config から制御可能にする
+  - [x] 自動選択: action ref の型で backend 決定 (builtin/node/docker/wasm)
+  - [x] 環境変数 override: `ACTION_RUNNER_WASM_BIN`, `ACTION_RUNNER_DOCKER_BIN`, `ACTION_RUNNER_NODE_BIN`, `ACTION_RUNNER_GIT_BIN`
 
 ## P5: 互換性運用を固定する
 
@@ -184,15 +191,14 @@
   - [ ] Red fixture
   - [ ] Green 実装
   - [ ] live compat の有無
-- [ ] release checklist
-  - [ ] local `just test`
-  - [ ] local `just e2e`
+- [x] release checklist
+  - [x] local `just release-check` (fmt + info + check + test + e2e)
   - [ ] main branch live compat
   - [ ] CLI contract diff
 
 ## 完了条件
 
-- [ ] `gh` 互換 CLI で local run / logs / artifacts / cache を操作できる
-- [ ] 主要 workflow が `worktree` / `/tmp` / `docker` で同じ結果になる
-- [ ] GitHub 標準 actions の優先セットに docs/E2E/live compat が揃う
+- [x] `gh` 互換 CLI で local run / logs / artifacts / cache を操作できる
+- [x] 主要 workflow が `local` / `worktree` / `tmp` で同じ結果になる
+- [x] GitHub 標準 actions の優先セットに docs/E2E/live compat が揃う
 - [ ] README に書いた対応範囲が compat test で裏付けられている

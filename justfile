@@ -65,8 +65,8 @@ info-check:
 clean:
     moon clean
 
-# Pre-release check
-release-check: fmt info check test
+# Pre-release check (local only)
+release-check: fmt info check test e2e
 
 # Pre-release check on the supported runtime target
 release-check-all:

@@ -1,0 +1,11 @@
+name: secret-mask
+'on':
+  push:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: leak
+        run: |
+          printf '%s' "token=${{ secrets.CALL_TOKEN }}"
+          printf '%s' "leaked-${{ secrets.CALL_TOKEN }}" >> "$GITHUB_STEP_SUMMARY"

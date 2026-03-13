@@ -150,7 +150,53 @@ struct WorkflowListRecord {
 
 ///|
 fn usage_text() -> String {
-  "Usage: action_runner <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner workflow run <workflow.yml> [--repo <repo_root>] [--workspace <workspace_root>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--cache-root <cache_root>] [--github-action-cache-root <github_action_cache_root>] [--registry-root <registry_root>] [--wasm-action-root <wasm_action_root>] [--workspace-mode <worktree|tmp|docker>] [--event <push-event.json>] [--repository <owner/repo>] [--ref <ref_name>] [--before <sha>] [--after <sha>] [--changed <path>]...\n       action_runner workflow list [--repo <repo_root>] [--json]\n       action_runner run list [--run-root <run_root>] [--json]\n       action_runner run view <run-id> [--run-root <run_root>] [--json]\n       action_runner run watch <run-id> [--run-root <run_root>] [--json]\n       action_runner run logs <run-id> [--run-root <run_root>] [--task <task-id>] [--json]\n       action_runner run download <run-id> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--json]\n       action_runner artifact list <run-id> [--run-root <run_root>] [--json]\n       action_runner artifact download <run-id> --name <artifact-name> [--dir <dest_dir>] [--run-root <run_root>] [--artifact-root <artifact_root>] [--json]\n       action_runner cache list [--cache-root <cache_root>] [--key <cache-key>] [--workspace-key <workspace_key>] [--json]\n       action_runner cache prune [--cache-root <cache_root>] --key <cache-key> [--workspace-key <workspace_key>] [--json]"
+  "Usage: action_runner <command>\n" +
+  "\n" +
+  "Workflow commands:\n" +
+  "  workflow run <workflow.yml>   Run a workflow locally\n" +
+  "  workflow list                 List workflows in a repository\n" +
+  "\n" +
+  "Run commands:\n" +
+  "  run list                     List workflow runs\n" +
+  "  run view <run-id>            View a workflow run\n" +
+  "  run watch <run-id>           Watch a workflow run until it completes\n" +
+  "  run logs <run-id>            View logs for a workflow run\n" +
+  "  run download <run-id>        Download artifacts from a workflow run\n" +
+  "\n" +
+  "Artifact commands:\n" +
+  "  artifact list <run-id>       List artifacts for a workflow run\n" +
+  "  artifact download <run-id>   Download a specific artifact\n" +
+  "\n" +
+  "Cache commands:\n" +
+  "  cache list                   List cache entries\n" +
+  "  cache prune                  Delete cache entries\n" +
+  "\n" +
+  "Workflow run flags:\n" +
+  "  --repo <path>                Run from a git repository\n" +
+  "  --workspace <path>           Workspace root for isolated execution\n" +
+  "  --workspace-mode <mode>      Execution mode: local, worktree, tmp, docker\n" +
+  "  --run-root <path>            Run record storage root\n" +
+  "  --event <path>               Push event JSON file\n" +
+  "  --repository <owner/repo>    GitHub repository name\n" +
+  "  --ref <ref>                  Git ref name\n" +
+  "  --before <sha>               Before commit SHA\n" +
+  "  --after <sha>                After commit SHA\n" +
+  "  --changed <path>             Changed file path (repeatable)\n" +
+  "\n" +
+  "Storage flags:\n" +
+  "  --artifact-root <path>       Artifact storage root\n" +
+  "  --cache-root <path>          Cache storage root\n" +
+  "  --github-action-cache-root <path>  GitHub Action cache root\n" +
+  "  --registry-root <path>       Action registry root\n" +
+  "  --wasm-action-root <path>    Wasm action root\n" +
+  "\n" +
+  "Output flags:\n" +
+  "  --json                       Output in JSON format\n" +
+  "  --task <task-id>             Filter logs by task ID\n" +
+  "  --name <name>                Artifact name for download\n" +
+  "  --dir <path>                 Download destination directory\n" +
+  "  --key <key>                  Cache key filter\n" +
+  "  --workspace-key <key>        Workspace key filter"
 }
 
 ///|
@@ -206,13 +252,13 @@ fn default_workspace_mode(repo_root : String?) -> String {
   if repo_root is Some(_) {
     "tmp"
   } else {
-    "worktree"
+    "local"
   }
 }
 
 ///|
 fn valid_workspace_mode(mode : String) -> Bool {
-  mode == "worktree" || mode == "tmp" || mode == "docker"
+  mode == "local" || mode == "worktree" || mode == "tmp" || mode == "docker"
 }
 
 ///|
@@ -265,6 +311,97 @@ fn local_workspace_root(workflow_path : String) -> String {
       } else {
         parent_dir(workflow_path)
       }
+  }
+}
+
+///|
+struct LocalWorkspace {
+  execution_root : String
+  cleanup_mode : String // "worktree" | "tmp" | "none"
+  source_root : String // original repo root (for worktree removal)
+}
+
+///|
+#cfg(target="native")
+async fn setup_local_workspace(
+  workspace_mode : String,
+  source_root : String,
+  workspace_base : String,
+) -> (LocalWorkspace?, Array[String]) {
+  if workspace_mode == "local" {
+    return (
+      Some({ execution_root: source_root, cleanup_mode: "none", source_root }),
+      [],
+    )
+  }
+  let abs_source = absolute_run_store_path(source_root)
+  let abs_workspace_base = absolute_run_store_path(workspace_base)
+  let timestamp = @env.now().to_string()
+  let workspace_dir = join_path(abs_workspace_base, "ws-" + timestamp)
+  if workspace_mode == "worktree" {
+    let (code, _, stderr) = @process.collect_output(
+      "git",
+      ["worktree", "add", "--detach", workspace_dir],
+      cwd=abs_source,
+    )
+    if code != 0 {
+      return (
+        None,
+        ["git worktree add failed: " + stderr.text().trim(chars=" \t\n\r").to_string()],
+      )
+    }
+    return (
+      Some({
+        execution_root: workspace_dir,
+        cleanup_mode: "worktree",
+        source_root: abs_source,
+      }),
+      [],
+    )
+  }
+  if workspace_mode == "tmp" {
+    let (code, _, stderr) = @process.collect_output(
+      "git",
+      [
+        "clone", "--quiet", "--no-local", "file://" + abs_source, workspace_dir,
+      ],
+      cwd=".",
+    )
+    if code != 0 {
+      return (
+        None,
+        ["git clone failed: " + stderr.text().trim(chars=" \t\n\r").to_string()],
+      )
+    }
+    return (
+      Some({
+        execution_root: workspace_dir,
+        cleanup_mode: "tmp",
+        source_root: abs_source,
+      }),
+      [],
+    )
+  }
+  (None, ["unsupported workspace mode: " + workspace_mode])
+}
+
+///|
+#cfg(target="native")
+async fn cleanup_local_workspace(workspace : LocalWorkspace) -> Unit {
+  match workspace.cleanup_mode {
+    "worktree" => {
+      let _ = @process.collect_output(
+        "git",
+        ["worktree", "remove", "--force", workspace.execution_root],
+        cwd=workspace.source_root,
+      )
+
+    }
+    "tmp" => {
+      let _ = remove_tree(workspace.execution_root)
+
+    }
+    _ => ()
   }
 }
 
@@ -1352,7 +1489,7 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
     errors.push("workflow path must be relative when --repo is used")
   }
   if workspace_mode.length() > 0 && not(valid_workspace_mode(workspace_mode)) {
-    errors.push("workspace mode must be one of: worktree, tmp, docker")
+    errors.push("workspace mode must be one of: local, worktree, tmp, docker")
   }
   if errors.length() > 0 {
     return { options: None, errors }
@@ -2697,15 +2834,36 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
       ])
       return 1
     }
-  } else if workspace_mode != "worktree" {
+  } else if workspace_mode == "docker" {
     print_errors([
-      "workspace mode '\{workspace_mode}' is not implemented yet for local workflow execution",
+      "workspace mode 'docker' is not implemented yet for local workflow execution",
     ])
     return 1
   }
 
   let mut workflow_path = options.workflow_path
-  let mut execution_root = local_workspace_root(workflow_path)
+  let source_root = local_workspace_root(workflow_path)
+  let mut execution_root = source_root
+  let mut local_workspace : LocalWorkspace? = None
+  if options.repo_root is None && workspace_mode != "local" {
+    let workspace_base = options.workspace_root.unwrap_or(
+      default_workspace_root(),
+    )
+    let (ws, ws_errors) = setup_local_workspace(
+      workspace_mode, source_root, workspace_base,
+    )
+    if ws_errors.length() > 0 {
+      print_errors(ws_errors)
+      return 1
+    }
+    guard ws is Some(workspace) else {
+      print_errors(["failed to setup workspace"])
+      return 1
+    }
+    execution_root = workspace.execution_root
+    workflow_path = join_path(execution_root, options.workflow_path)
+    local_workspace = Some(workspace)
+  }
   let base_event = match options.event_path {
     Some(event_path) =>
       match read_text(event_path) {
@@ -2861,11 +3019,12 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
     return 1
   }
 
-  let report = @ar.execute_lowered_native(
+  let raw_report = @ar.execute_lowered_native(
     lowered,
     workspace_root=execution_root,
     push_event=Some(trigger_event),
   )
+  let report = @ar.mask_report_secrets(raw_report, @ar.collect_secret_values())
   if report.issues.length() > 0 {
     print_errors(report.issues)
   }
@@ -2897,6 +3056,11 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
   )
   let run_id = run_dir.unwrap_or("")
   print_report(workflow, report, run_id~)
+  @ar.cleanup_run_temp_files(execution_root)
+  match local_workspace {
+    Some(ws) => cleanup_local_workspace(ws)
+    None => ()
+  }
   if not(report.ok) {
     return 1
   }
@@ -2907,6 +3071,12 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
 #cfg(target="native")
 async fn main {
   let cli_args = @xsys.get_cli_args()
+  if cli_args.length() <= 1 ||
+    (cli_args.length() > 1 &&
+    (cli_args[1] == "--help" || cli_args[1] == "-h" || cli_args[1] == "help")) {
+    println(usage_text())
+    return
+  }
   if cli_args.length() > 1 && cli_args[1] == "workflow" {
     if cli_args.length() < 3 {
       print_errors(["workflow subcommand requires an action"])
@@ -3003,6 +3173,9 @@ async fn main {
     return
   }
 
+  // Legacy positional form: action_runner <workflow.yml> [flags...]
+  // Prefer: action_runner workflow run <workflow.yml> [flags...]
+  println("warning: positional workflow path is deprecated, use 'workflow run' subcommand instead")
   let parsed_args = parse_cli_args(cli_args)
   if parsed_args.errors.length() > 0 {
     print_errors(parsed_args.errors)
