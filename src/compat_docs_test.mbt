@@ -454,6 +454,24 @@ async test "compat docs: setup-node configures node version and npm auth config"
 
 ///|
 #cfg(target="native")
+async test "compat docs: artifact upload supports directory and wildcard paths" {
+  let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(
+    "artifact-glob-directory",
+  )
+  let report = execute_lowered_native(
+    lower_push_workflow(workflow),
+    workspace_root=workspace,
+  )
+  let task = compat_expect_task_report(report, "build/verify")
+
+  inspect(fixture.id, content="docs-artifact-glob-directory")
+  inspect(report.ok, content="true")
+  inspect(task.status, content="success")
+  inspect(task.stdout, content="<root|child|linux|macos|no|no>")
+}
+
+///|
+#cfg(target="native")
 async test "compat docs: setup-node cache npm restores after save job" {
   let (fixture, workflow) = compat_expect_docs_fixture("setup-node-cache-npm")
   let workspace = prepare_workspace("compat-docs-setup-node-cache-npm")

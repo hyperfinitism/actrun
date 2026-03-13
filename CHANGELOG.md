@@ -11,6 +11,8 @@
 - `compat-cache-lookup-only.yml` と local/GitHub-hosted cache lookup-only compat coverage
 - `actions/cache@*` / `actions/cache/restore@*` の `fail-on-cache-miss` 対応
 - `compat-cache-fail-on-cache-miss.yml` と local/GitHub-hosted cache fail-on-cache-miss compat coverage
+- `actions/upload-artifact@*` / `actions/download-artifact@*` の `directory`, wildcard path, download-all directory mode 対応
+- `compat-artifact-glob-directory.yml` と local/GitHub-hosted artifact glob/directory compat coverage
 - `compat-setup-node-cache-npm.yml` と `gha-compat-*` script の live compare 導線
 - expression function の最小 subset (`contains`, `startsWith`, `endsWith`, `fromJSON`, `toJSON`, `hashFiles`)
 - docs/E2E coverage for `fromJSON()` / `toJSON()` and `contains(fromJSON(...), ...)`

@@ -1413,6 +1413,78 @@ async test "executor: builtin artifact actions upload and download files" {
 
 ///|
 #cfg(target="native")
+async test "executor: builtin artifact actions support directory, wildcard, and download-all" {
+  let workspace = prepare_workspace("executor-builtin-artifacts-glob-dir")
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "build",
+      [
+        new_run_step(
+          "write",
+          "mkdir -p pkg/nested logs/linux logs/macos\n" +
+          "printf '%s' root > pkg/root.txt\n" +
+          "printf '%s' child > pkg/nested/child.txt\n" +
+          "printf '%s' linux > logs/linux/out.txt\n" +
+          "printf '%s' macos > logs/macos/out.txt\n",
+          shell=Some("bash"),
+        ),
+        new_uses_step("upload_dir", "actions/upload-artifact@v4", with_values={
+          "name": "dir-bundle",
+          "path": "pkg/",
+        }),
+        new_uses_step("upload_glob", "actions/upload-artifact@v4", with_values={
+          "name": "log-bundle",
+          "path": "logs/*/out.txt",
+        }),
+        new_run_step("remove", "rm -rf pkg logs", shell=Some("bash")),
+        new_uses_step("download_all", "actions/download-artifact@v4", with_values={
+          "path": "restored",
+        }),
+        new_run_step(
+          "verify",
+          "printf '%s|%s|%s|%s|%s|%s' " +
+          "\"$(cat restored/dir-bundle/root.txt)\" " +
+          "\"$(cat restored/dir-bundle/nested/child.txt)\" " +
+          "\"$(cat restored/log-bundle/linux/out.txt)\" " +
+          "\"$(cat restored/log-bundle/macos/out.txt)\" " +
+          "\"$(test -d restored/dir-bundle/pkg && echo yes || echo no)\" " +
+          "\"$(test -f restored/log-bundle/out.txt && echo yes || echo no)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+
+  inspect(
+    expect_task_report(report, "build/upload_dir").status,
+    content="success",
+  )
+  inspect(
+    expect_task_report(report, "build/upload_glob").status,
+    content="success",
+  )
+  inspect(
+    expect_task_report(report, "build/download_all").status,
+    content="success",
+  )
+  let verify = expect_task_report(report, "build/verify")
+  inspect(verify.status, content="success")
+  inspect(
+    verify.stdout.trim(chars=" \n\r\t").to_string(),
+    content="root|child|linux|macos|no|no",
+  )
+}
+
+///|
+#cfg(target="native")
 async test "executor: builtin cache save and restore roundtrip across jobs" {
   let workspace = prepare_workspace("executor-builtin-cache")
   test_support_remove_tree(executor_test_cache_store_root(workspace))

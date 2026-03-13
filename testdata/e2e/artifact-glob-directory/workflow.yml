@@ -1,0 +1,42 @@
+name: e2e-artifact-glob-directory
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: write
+        shell: bash
+        run: |
+          mkdir -p pkg/nested logs/linux logs/macos artifacts
+          printf '%s' root > pkg/root.txt
+          printf '%s' child > pkg/nested/child.txt
+          printf '%s' linux > logs/linux/out.txt
+          printf '%s' macos > logs/macos/out.txt
+      - id: upload_dir
+        uses: actions/upload-artifact@v4
+        with:
+          name: dir-bundle
+          path: pkg/
+      - id: upload_glob
+        uses: actions/upload-artifact@v4
+        with:
+          name: log-bundle
+          path: logs/*/out.txt
+      - id: remove
+        shell: bash
+        run: |
+          rm -rf pkg logs
+      - id: download_all
+        uses: actions/download-artifact@v4
+        with:
+          path: restored
+      - id: verify
+        shell: bash
+        run: |
+          printf '%s|%s|%s|%s|%s|%s' \
+            "$(cat restored/dir-bundle/root.txt)" \
+            "$(cat restored/dir-bundle/nested/child.txt)" \
+            "$(cat restored/log-bundle/linux/out.txt)" \
+            "$(cat restored/log-bundle/macos/out.txt)" \
+            "$(test -d restored/dir-bundle/pkg && echo yes || echo no)" \
+            "$(test -f restored/log-bundle/out.txt && echo yes || echo no)" > artifacts/result.txt

@@ -7,6 +7,7 @@
 - `trigger-skipped`: branch/path filter mismatch で CLI が `state=skipped` を返す
 - `file-commands`: `GITHUB_ENV` / `GITHUB_OUTPUT` / `GITHUB_PATH` / `GITHUB_STEP_SUMMARY`
 - `artifact-actions-roundtrip`: `actions/upload-artifact` / `actions/download-artifact` の roundtrip
+- `artifact-glob-directory`: `upload-artifact` の directory / wildcard path と `download-artifact` の download-all directory mode
 - `cache-actions-roundtrip`: `actions/cache/save` / `actions/cache/restore` の roundtrip
 - `cache-auto-save-roundtrip`: `actions/cache` 本体の miss -> deferred save -> next job hit
 - `cache-restore-keys`: `actions/cache/restore` が `restore-keys` の prefix hit を復元し、`cache-hit=false` を返す

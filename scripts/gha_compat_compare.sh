@@ -42,6 +42,9 @@ case "$workflow_file" in
   compat-artifact-multi-job.yml)
     report_name="compat-artifact-report"
     ;;
+  compat-artifact-glob-directory.yml)
+    report_name="compat-artifact-glob-directory-report"
+    ;;
   compat-cache-roundtrip.yml)
     report_name="compat-cache-report"
     ;;
