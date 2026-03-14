@@ -1,0 +1,11 @@
+name: matrix
+'on': push
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        version: [18, 20]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: echo "OS=${{ matrix.os }} VERSION=${{ matrix.version }}"

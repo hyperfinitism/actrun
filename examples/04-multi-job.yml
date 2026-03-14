@@ -1,0 +1,16 @@
+name: multi-job
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.compute.outputs.result }}
+    steps:
+      - id: compute
+        run: echo "result=42" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Build result was ${{ needs.build.outputs.result }}"

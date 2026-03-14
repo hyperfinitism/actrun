@@ -1,0 +1,18 @@
+name: conditional
+'on': push
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - id: test
+        run: exit 1
+        continue-on-error: true
+
+      - if: steps.test.outcome == 'failure'
+        run: echo "Test failed but we continued"
+
+      - if: always()
+        run: echo "This always runs"
+
+      - if: failure()
+        run: echo "This runs only on failure"

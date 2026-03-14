@@ -1,0 +1,8 @@
+name: reusable-caller
+'on': push
+jobs:
+  call:
+    uses: ./.github/workflows/callee.yml
+    with:
+      message: "hello from caller"
+    secrets: inherit

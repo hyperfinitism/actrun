@@ -1,0 +1,25 @@
+name: artifacts
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          mkdir -p dist
+          echo "built at $(date)" > dist/output.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: dist/
+
+  verify:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: downloaded/
+
+      - run: cat downloaded/output.txt

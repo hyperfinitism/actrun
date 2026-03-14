@@ -1,0 +1,22 @@
+name: local-skip
+'on': push
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      # Skip checkout locally (already in the repo)
+      - uses: actions/checkout@v5
+        if: ${{ !env.ACTRUN_LOCAL }}
+
+      # Skip third-party setup locally (already installed)
+      - uses: actions/setup-node@v4
+        if: ${{ !env.ACTRUN_LOCAL }}
+        with:
+          node-version: '20'
+
+      # This always runs
+      - run: echo "Running tests..."
+
+      # Local-only debug step
+      - run: echo "Debug info (local only)"
+        if: ${{ env.ACTRUN_LOCAL }}

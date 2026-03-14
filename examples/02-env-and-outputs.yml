@@ -1,0 +1,14 @@
+name: env-and-outputs
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: setup
+        run: |
+          echo "GREETING=hello" >> "$GITHUB_ENV"
+          echo "color=blue" >> "$GITHUB_OUTPUT"
+      - id: use
+        run: |
+          echo "env: $GREETING"
+          echo "output: ${{ steps.setup.outputs.color }}"
