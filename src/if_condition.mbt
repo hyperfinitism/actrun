@@ -764,7 +764,7 @@ fn if_expression_function_value(
   match if_function_arguments(text, "toJSON", 1) {
     Some(args) => {
       let value = if_condition_atom_value(args[0], ctx)
-      let json_text = Json::stringify(if_condition_value_json(value))
+      let json_text = Json::stringify(if_condition_value_json(value), indent=2)
       return Some(if_condition_value_from_json(Json::string(json_text)))
     }
     None => ()
