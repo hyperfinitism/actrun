@@ -1,6 +1,6 @@
 FROM ubuntu:24.04 AS builder
 
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl git build-essential && rm -rf /var/lib/apt/lists/*
 
 # Install MoonBit CLI
 RUN curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
