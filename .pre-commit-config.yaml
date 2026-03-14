@@ -13,6 +13,12 @@ repos:
         language: system
         pass_filenames: false
         files: '\.mbt$'
+      - id: secretlint
+        name: secretlint
+        entry: npx --yes secretlint
+        language: system
+        pass_filenames: true
+        types: [text]
       # Optional: install with `moon install mizchi/starlint/cmd/starlint`
       # - id: starlint
       #   name: starlint
