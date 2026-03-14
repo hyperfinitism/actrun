@@ -186,6 +186,9 @@ fn usage_text() -> String {
   "  --changed <path>             Changed file path (repeatable)\n" +
   "  --skip-action <pattern>      Skip actions matching pattern (repeatable)\n" +
   "  --dry-run                    Show execution plan without running\n" +
+  "  --local                      Shorthand for --workspace-mode local\n" +
+  "  --worktree                   Shorthand for --workspace-mode worktree\n" +
+  "  --tmp                        Shorthand for --workspace-mode tmp\n" +
   "\n" +
   "Storage flags:\n" +
   "  --artifact-root <path>       Artifact storage root\n" +
@@ -1422,6 +1425,21 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
     let arg = args[index]
     if arg == "--dry-run" {
       dry_run = true
+      index += 1
+      continue
+    }
+    if arg == "--tmp" {
+      workspace_mode = "tmp"
+      index += 1
+      continue
+    }
+    if arg == "--worktree" {
+      workspace_mode = "worktree"
+      index += 1
+      continue
+    }
+    if arg == "--local" {
+      workspace_mode = "local"
       index += 1
       continue
     }
