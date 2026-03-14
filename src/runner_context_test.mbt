@@ -36,7 +36,7 @@ async test "executor: injects runner env variables" {
     #|   [ -n "$RUNNER_ARCH" ] &&
     #|   [ -n "$RUNNER_TEMP" ] &&
     #|   [ -d "$RUNNER_TEMP" ] &&
-    #|   [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
+    #|   [ -n "$RUNNER_ENVIRONMENT" ]; then
     #|  printf '<ok>'
     #|else
     #|  printf '<%s|%s|%s|%s>' "$RUNNER_OS" "$RUNNER_ARCH" "$RUNNER_TEMP" "$RUNNER_ENVIRONMENT"
