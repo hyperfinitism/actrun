@@ -4,7 +4,7 @@
   "deps": {
     "moonbitlang/async": "0.16.2",
     "mizchi/bitflow": "0.3.1",
-    "mizchi/bit": { "path": "../../bit-vcs/bit" },
+    "mizchi/bit": "0.29.0",
     "moonbitlang/x": "0.4.40",
     "moonbitlang/quickcheck": "0.9.10"
   },
