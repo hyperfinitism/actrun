@@ -35,6 +35,14 @@ GOOS=wasip1 GOARCH=wasm go build -o main.wasm
 cp main.wasm _build/actrun/wasm_actions/my-action/v1/main.wasm
 ```
 
+### From MoonBit
+```bash
+moon build --target wasm
+cp _build/wasm/debug/build/<name>.wasm \
+   _build/actrun/wasm_actions/my-action/v1/main.wasm
+# Run with: ACTRUN_WASM_BIN=moonrun actrun workflow run ci.yml
+```
+
 ### From C
 ```bash
 # Requires wasi-sdk
@@ -53,4 +61,7 @@ Wasm actions receive the same environment as other actions:
 
 ## Runtime
 
-Default: `wasmtime`. Override with `ACTRUN_WASM_BIN`.
+| Runtime | Target | Command |
+|---------|--------|---------|
+| `wasmtime` (default) | WASI (Rust/Go/C) | `actrun ...` |
+| `moonrun` | MoonBit wasm | `ACTRUN_WASM_BIN=moonrun actrun ...` |

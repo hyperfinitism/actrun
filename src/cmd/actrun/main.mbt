@@ -2229,6 +2229,12 @@ async fn handle_doctor_command() -> Int {
       env_override: "",
       required: false,
     },
+    {
+      name: "moonrun",
+      bin: "moonrun",
+      env_override: "",
+      required: false,
+    },
   ]
   let mut has_error = false
   for check in checks {
