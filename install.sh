@@ -60,3 +60,16 @@ else
 fi
 
 echo "${BIN_NAME} ${VERSION} installed to ${INSTALL_DIR}/${BIN_NAME}"
+
+# Check if INSTALL_DIR is in PATH
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *)
+    echo ""
+    echo "NOTE: ${INSTALL_DIR} is not in your PATH."
+    echo "Add it by running:"
+    echo ""
+    echo "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.zshrc  # zsh"
+    echo "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.bashrc # bash"
+    ;;
+esac
