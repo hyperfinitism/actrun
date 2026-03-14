@@ -79,8 +79,8 @@ test "cli: parse repo mode flags" {
     "/tmp/cache", "--github-action-cache-root", "/tmp/gha-cache", "--registry-root",
     "/tmp/registry", "--wasm-action-root", "/tmp/wasm", "--workspace-mode", "tmp",
     "--event", "push.json", "--ref", "feature/demo", "--before", "def456", "--after",
-    "abc123", "--repository", "mizchi/actrun", "--changed", "src/lib.mbt",
-    "--changed", "README.md",
+    "abc123", "--repository", "mizchi/actrun", "--changed", "src/lib.mbt", "--changed",
+    "README.md",
   ])
   inspect(result.errors, content="[]")
 
@@ -142,8 +142,8 @@ test "cli: parse workflow run flags" {
   let result = parse_workflow_run_args([
     "actrun", "workflow", "run", ".github/workflows/ci.yml", "--repo", "/repo", "--workspace",
     "/tmp/work", "--run-root", "/tmp/runs", "--workspace-mode", "tmp", "--event",
-    "push.json", "--repository", "mizchi/actrun", "--ref", "main", "--before",
-    "def456", "--after", "abc123", "--changed", "src/lib.mbt",
+    "push.json", "--repository", "mizchi/actrun", "--ref", "main", "--before", "def456",
+    "--after", "abc123", "--changed", "src/lib.mbt",
   ])
   inspect(result.errors, content="[]")
   let options = expect_cli_options(result)
@@ -400,9 +400,7 @@ test "cli: root override flags are exported to runner env" {
 ///|
 test "cli: parse GitHub repository from https remote url" {
   inspect(
-    github_repository_from_remote_url(
-      "https://github.com/mizchi/actrun.git",
-    ),
+    github_repository_from_remote_url("https://github.com/mizchi/actrun.git"),
     content="mizchi/actrun",
   )
 }
@@ -571,11 +569,7 @@ async test "cli: persist run record stores task logs and summaries" {
     lowered,
     workspace_root=workspace,
     push_event=Some(
-      @ar.new_push_event(
-        "main",
-        ["README.md"],
-        repository="mizchi/actrun",
-      ),
+      @ar.new_push_event("main", ["README.md"], repository="mizchi/actrun"),
     ),
   )
   let run_id = persist_run_record(
@@ -1078,7 +1072,10 @@ test "dotenv: inline comment (unquoted)" {
 
 ///|
 test "dotenv: inline comment not stripped in quoted" {
-  inspect(dotenv_get("FOO=\"bar # not a comment\"", "FOO"), content="bar # not a comment")
+  inspect(
+    dotenv_get("FOO=\"bar # not a comment\"", "FOO"),
+    content="bar # not a comment",
+  )
 }
 
 ///|
@@ -1086,7 +1083,10 @@ test "dotenv: escape sequences in double quotes" {
   inspect(dotenv_get("FOO=\"line1\\nline2\"", "FOO"), content="line1\nline2")
   inspect(dotenv_get("FOO=\"tab\\there\"", "FOO"), content="tab\there")
   inspect(dotenv_get("FOO=\"back\\\\slash\"", "FOO"), content="back\\slash")
-  inspect(dotenv_get("FOO=\"escaped\\\"quote\"", "FOO"), content="escaped\"quote")
+  inspect(
+    dotenv_get("FOO=\"escaped\\\"quote\"", "FOO"),
+    content="escaped\"quote",
+  )
 }
 
 ///|

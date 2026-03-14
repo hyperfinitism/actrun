@@ -1425,8 +1425,8 @@ fn parse_dotenv(content : String) -> DotenvParseResult {
     // Strip optional "export " prefix
     let effective = if line.has_prefix("export ") {
       String::unsafe_substring(line, start=7, end=line.length())
-        .trim(chars=" \t")
-        .to_string()
+      .trim(chars=" \t")
+      .to_string()
     } else {
       line
     }
@@ -1438,10 +1438,10 @@ fn parse_dotenv(content : String) -> DotenvParseResult {
       .trim(chars=" \t")
       .to_string()
     let raw_value = String::unsafe_substring(
-      effective,
-      start=eq_idx + 1,
-      end=effective.length(),
-    )
+        effective,
+        start=eq_idx + 1,
+        end=effective.length(),
+      )
       .trim(chars=" \t")
       .to_string()
     if key.length() == 0 {
@@ -1491,20 +1491,14 @@ fn parse_dotenv_double_quoted(
     match dotenv_find_unescaped_quote(buf) {
       Some(close_idx) => {
         let inner = String::unsafe_substring(buf, start=0, end=close_idx)
-        let expanded = dotenv_expand_vars(
-          dotenv_unescape_double(inner),
-          env,
-        )
+        let expanded = dotenv_expand_vars(dotenv_unescape_double(inner), env)
         return (expanded, line_idx + 1)
       }
       None => {
         line_idx += 1
         if line_idx >= lines.length() {
           // Unterminated quote: return what we have
-          let expanded = dotenv_expand_vars(
-            dotenv_unescape_double(buf),
-            env,
-          )
+          let expanded = dotenv_expand_vars(dotenv_unescape_double(buf), env)
           return (expanded, line_idx)
         }
         buf = buf + "\n" + lines[line_idx].trim(chars="\r").to_string()
