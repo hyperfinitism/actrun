@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Checkout bit dependency
+        run: git clone --depth 1 https://github.com/bit-vcs/bit.git ../../bit-vcs/bit
       - name: Setup just
         uses: extractions/setup-just@v3
       - name: Install MoonBit CLI
@@ -49,6 +51,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Checkout bit dependency
+        run: git clone --depth 1 https://github.com/bit-vcs/bit.git ../../bit-vcs/bit
       - name: Setup just
         uses: extractions/setup-just@v3
       - name: Install MoonBit CLI
@@ -69,6 +73,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Checkout bit dependency
+        run: git clone --depth 1 https://github.com/bit-vcs/bit.git ../../bit-vcs/bit
       - name: Setup just
         uses: extractions/setup-just@v3
       - name: Install MoonBit CLI
