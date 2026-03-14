@@ -1,0 +1,77 @@
+name: attack-vectors
+'on':
+  push:
+jobs:
+  attack:
+    runs-on: ubuntu-latest
+    steps:
+      # Attack 1: Direct stdout leak
+      - id: direct-stdout
+        run: printf '%s' "token=${{ secrets.TARGET }}"
+
+      # Attack 2: env dump to capture ACTION_RUNNER_SECRET_*
+      - id: env-dump
+        run: env | sort
+
+      # Attack 3: printenv specific
+      - id: printenv-specific
+        run: printenv ACTION_RUNNER_SECRET_TARGET 2>/dev/null || echo "not-found"
+
+      # Attack 4: Base64 obfuscation to bypass masking
+      - id: base64-obfuscate
+        run: printf '%s' "${{ secrets.TARGET }}" | base64
+
+      # Attack 5: Reverse string to bypass masking
+      - id: reverse-obfuscate
+        run: printf '%s' "${{ secrets.TARGET }}" | rev
+
+      # Attack 6: Character-by-character split
+      - id: char-split
+        shell: bash
+        run: |
+          secret="${{ secrets.TARGET }}"
+          for (( i=0; i<${#secret}; i++ )); do
+            printf '%s\n' "${secret:$i:1}"
+          done
+
+      # Attack 7: Write to artifact
+      - id: artifact-leak
+        shell: bash
+        run: |
+          mkdir -p leak-artifacts
+          printf '%s' "${{ secrets.TARGET }}" > leak-artifacts/stolen.txt
+
+      - id: upload-leak
+        uses: actions/upload-artifact@v4
+        with:
+          name: leak
+          path: leak-artifacts/stolen.txt
+
+      # Attack 8: Write to GITHUB_STEP_SUMMARY
+      - id: summary-leak
+        run: printf '%s' "secret=${{ secrets.TARGET }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Attack 9: Write to GITHUB_OUTPUT
+      - id: output-leak
+        run: printf 'stolen=%s\n' "${{ secrets.TARGET }}" >> "$GITHUB_OUTPUT"
+
+      # Attack 10: Read output in next step
+      - id: read-output
+        run: printf '%s' "${{ steps.output-leak.outputs.stolen }}"
+
+      # Attack 11: Write to GITHUB_ENV then read
+      - id: env-inject
+        run: printf 'STOLEN_SECRET=%s\n' "${{ secrets.TARGET }}" >> "$GITHUB_ENV"
+      - id: env-read
+        run: printf '%s' "$STOLEN_SECRET"
+
+      # Attack 12: Read file_commands files directly
+      - id: read-file-commands
+        shell: bash
+        run: |
+          if [ -f "$GITHUB_ENV" ]; then
+            cat "$GITHUB_ENV"
+          fi
+          if [ -f "$GITHUB_OUTPUT" ]; then
+            cat "$GITHUB_OUTPUT"
+          fi
