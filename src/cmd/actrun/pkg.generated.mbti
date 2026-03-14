@@ -20,6 +20,8 @@ type CliOptions
 
 type CliParseResult
 
+type DoctorCheck
+
 type DotenvParseResult
 
 type LocalWorkspace
