@@ -60,6 +60,7 @@ Lock down "where to execute" first. If this is ambiguous, both actions compatibi
   - [x] `--workspace-mode worktree` (isolation via `git worktree add`)
   - [x] `--workspace-mode tmp` (isolation via `git clone`)
   - [ ] `--workspace-mode docker`
+  - [ ] Container runtime backends: Docker, Podman, Lima, Apple Containers (`container` framework)
   - [x] Fix cleanup / isolation policy for each mode
   - [x] Security test confirming `_build/actrun/file_commands` / `runner_temp` (which may contain secrets) are cleaned up after runs
   - [x] Security test confirming step scripts / `.npmrc` / file command files are not world-readable
@@ -163,6 +164,8 @@ The approach has two stages:
   - [x] Service `volumes` / `options` / `credentials` semantics (covered by existing implementation)
   - [x] Service log capture and run store persistence (fetch `docker logs` during cleanup)
   - [x] Security test confirming `docker login` credentials do not appear in plaintext in argv / stderr / run store (`--password-stdin` + mask_secrets)
+  - [ ] Alternative container runtimes: Podman, Lima, Apple Containers (`container` framework)
+  - [ ] `ACTRUN_CONTAINER_RUNTIME` env var to select runtime (default: `docker`)
 - [ ] Shell / host differences
   - [ ] `pwsh` execution environment differences (only works when pwsh is available on the system)
   - [x] Expanded shell template compatibility fixtures (bash/sh/custom template E2E)
