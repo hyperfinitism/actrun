@@ -1022,3 +1022,176 @@ test "cli: cache JSON schema has required fields" {
     assert_true(json_has_field(cache_json, field))
   }
 }
+
+// --- dotenv parser tests ---
+
+///|
+fn dotenv_get(content : String, key : String) -> String {
+  parse_dotenv(content).entries.get(key).unwrap_or("")
+}
+
+///|
+test "dotenv: basic key=value" {
+  let r = parse_dotenv("FOO=bar")
+  inspect(r.entries.get("FOO").unwrap_or(""), content="bar")
+}
+
+///|
+test "dotenv: empty lines and comments" {
+  let input =
+    #|# this is a comment
+    #|
+    #|FOO=bar
+    #|
+    #|# another comment
+    #|BAZ=qux
+  let r = parse_dotenv(input)
+  inspect(r.entries.get("FOO").unwrap_or(""), content="bar")
+  inspect(r.entries.get("BAZ").unwrap_or(""), content="qux")
+}
+
+///|
+test "dotenv: double-quoted value" {
+  inspect(dotenv_get("FOO=\"hello world\"", "FOO"), content="hello world")
+}
+
+///|
+test "dotenv: single-quoted value" {
+  inspect(dotenv_get("FOO='hello world'", "FOO"), content="hello world")
+}
+
+///|
+test "dotenv: export prefix" {
+  inspect(dotenv_get("export FOO=bar", "FOO"), content="bar")
+  inspect(dotenv_get("export FOO=\"bar\"", "FOO"), content="bar")
+}
+
+///|
+test "dotenv: whitespace around key and value" {
+  inspect(dotenv_get("  FOO  =  bar  ", "FOO"), content="bar")
+}
+
+///|
+test "dotenv: inline comment (unquoted)" {
+  inspect(dotenv_get("FOO=bar # this is a comment", "FOO"), content="bar")
+}
+
+///|
+test "dotenv: inline comment not stripped in quoted" {
+  inspect(dotenv_get("FOO=\"bar # not a comment\"", "FOO"), content="bar # not a comment")
+}
+
+///|
+test "dotenv: escape sequences in double quotes" {
+  inspect(dotenv_get("FOO=\"line1\\nline2\"", "FOO"), content="line1\nline2")
+  inspect(dotenv_get("FOO=\"tab\\there\"", "FOO"), content="tab\there")
+  inspect(dotenv_get("FOO=\"back\\\\slash\"", "FOO"), content="back\\slash")
+  inspect(dotenv_get("FOO=\"escaped\\\"quote\"", "FOO"), content="escaped\"quote")
+}
+
+///|
+test "dotenv: no escape in single quotes" {
+  inspect(dotenv_get("FOO='hello\\nworld'", "FOO"), content="hello\\nworld")
+}
+
+///|
+test "dotenv: multiline double-quoted value" {
+  let content = "FOO=\"line1\nline2\nline3\""
+  inspect(dotenv_get(content, "FOO"), content="line1\nline2\nline3")
+}
+
+///|
+test "dotenv: multiline single-quoted value" {
+  let content = "FOO='line1\nline2'"
+  inspect(dotenv_get(content, "FOO"), content="line1\nline2")
+}
+
+///|
+test "dotenv: variable expansion ${VAR}" {
+  let r = parse_dotenv("BASE=/app\nPATH_FULL=${BASE}/bin")
+  inspect(r.entries.get("PATH_FULL").unwrap_or(""), content="/app/bin")
+}
+
+///|
+test "dotenv: variable expansion $VAR" {
+  let r = parse_dotenv("NAME=world\nGREET=hello_$NAME")
+  inspect(r.entries.get("GREET").unwrap_or(""), content="hello_world")
+}
+
+///|
+test "dotenv: no expansion in single quotes" {
+  let r = parse_dotenv("NAME=world\nGREET='hello $NAME'")
+  inspect(r.entries.get("GREET").unwrap_or(""), content="hello $NAME")
+}
+
+///|
+test "dotenv: expansion in double quotes" {
+  let r = parse_dotenv("NAME=world\nGREET=\"hello ${NAME}\"")
+  inspect(r.entries.get("GREET").unwrap_or(""), content="hello world")
+}
+
+///|
+test "dotenv: empty value" {
+  inspect(dotenv_get("FOO=", "FOO"), content="")
+}
+
+///|
+test "dotenv: empty quoted value" {
+  inspect(dotenv_get("FOO=\"\"", "FOO"), content="")
+  inspect(dotenv_get("FOO=''", "FOO"), content="")
+}
+
+///|
+test "dotenv: value with equals sign" {
+  inspect(dotenv_get("FOO=a=b=c", "FOO"), content="a=b=c")
+}
+
+///|
+test "dotenv: multiple entries" {
+  let input =
+    #|A=1
+    #|B=2
+    #|C=3
+  let r = parse_dotenv(input)
+  inspect(r.entries.get("A").unwrap_or(""), content="1")
+  inspect(r.entries.get("B").unwrap_or(""), content="2")
+  inspect(r.entries.get("C").unwrap_or(""), content="3")
+}
+
+///|
+test "dotenv: later value overrides earlier" {
+  let r = parse_dotenv("FOO=first\nFOO=second")
+  inspect(r.entries.get("FOO").unwrap_or(""), content="second")
+}
+
+///|
+test "dotenv: hash in unquoted value without space" {
+  // # without preceding space is NOT a comment
+  inspect(dotenv_get("COLOR=#ffffff", "COLOR"), content="#ffffff")
+}
+
+///|
+test "dotenv: lines without = are ignored" {
+  let r = parse_dotenv("not_a_pair\nFOO=bar")
+  inspect(r.entries.get("FOO").unwrap_or(""), content="bar")
+  assert_true(r.entries.get("not_a_pair") is None)
+}
+
+///|
+test "dotenv: windows line endings" {
+  let r = parse_dotenv("FOO=bar\r\nBAZ=qux\r\n")
+  inspect(r.entries.get("FOO").unwrap_or(""), content="bar")
+  inspect(r.entries.get("BAZ").unwrap_or(""), content="qux")
+}
+
+///|
+test "dotenv: chained variable expansion" {
+  let r = parse_dotenv("A=hello\nB=${A}_world\nC=${B}_!")
+  inspect(r.entries.get("C").unwrap_or(""), content="hello_world_!")
+}
+
+///|
+test "dotenv: undefined variable expands to empty" {
+  let r = parse_dotenv("FOO=${UNDEFINED_VAR_12345}")
+  inspect(r.entries.get("FOO").unwrap_or(""), content="")
+}

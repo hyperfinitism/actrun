@@ -1401,44 +1401,312 @@ fn persist_run_record(
 }
 
 ///|
-fn load_env_file(path : String) -> Array[String] {
+struct DotenvParseResult {
+  entries : Map[String, String]
+  errors : Array[String]
+}
+
+///|
+fn parse_dotenv(content : String) -> DotenvParseResult {
+  let entries : Map[String, String] = {}
   let errors : Array[String] = []
-  let content = try @xfs.read_file_to_string(path) catch {
-    _ => {
-      errors.push("failed to read env file: " + path)
-      return errors
+  let lines : Array[String] = []
+  for part in content.split("\n") {
+    lines.push(part.to_string())
+  }
+  let mut i = 0
+  while i < lines.length() {
+    let raw = lines[i].trim(chars="\r").to_string()
+    let line = raw.trim(chars=" \t").to_string()
+    if line.length() == 0 || line.has_prefix("#") {
+      i += 1
+      continue
     }
+    // Strip optional "export " prefix
+    let effective = if line.has_prefix("export ") {
+      String::unsafe_substring(line, start=7, end=line.length())
+        .trim(chars=" \t")
+        .to_string()
+    } else {
+      line
+    }
+    guard effective.find("=") is Some(eq_idx) else {
+      i += 1
+      continue
+    }
+    let key = String::unsafe_substring(effective, start=0, end=eq_idx)
+      .trim(chars=" \t")
+      .to_string()
+    let raw_value = String::unsafe_substring(
+      effective,
+      start=eq_idx + 1,
+      end=effective.length(),
+    )
+      .trim(chars=" \t")
+      .to_string()
+    if key.length() == 0 {
+      i += 1
+      continue
+    }
+    // Double-quoted value: supports multiline, escapes, variable expansion
+    if raw_value.has_prefix("\"") {
+      let (value, next_i) = parse_dotenv_double_quoted(
+        raw_value, lines, i, entries,
+      )
+      entries[key] = value
+      i = next_i
+      continue
+    }
+    // Single-quoted value: literal, no escapes, no expansion
+    if raw_value.has_prefix("'") {
+      let (value, next_i) = parse_dotenv_single_quoted(raw_value, lines, i)
+      entries[key] = value
+      i = next_i
+      continue
+    }
+    // Unquoted value: strip inline comment, expand variables
+    let value = dotenv_strip_inline_comment(raw_value)
+    entries[key] = dotenv_expand_vars(value, entries)
+    i += 1
+  }
+  { entries, errors }
+}
+
+///|
+fn parse_dotenv_double_quoted(
+  first_raw : String,
+  lines : Array[String],
+  start_line : Int,
+  env : Map[String, String],
+) -> (String, Int) {
+  // Remove leading "
+  let mut buf = String::unsafe_substring(
+    first_raw,
+    start=1,
+    end=first_raw.length(),
+  )
+  let mut line_idx = start_line
+  // Check if closing " is on the same line
+  while true {
+    match dotenv_find_unescaped_quote(buf) {
+      Some(close_idx) => {
+        let inner = String::unsafe_substring(buf, start=0, end=close_idx)
+        let expanded = dotenv_expand_vars(
+          dotenv_unescape_double(inner),
+          env,
+        )
+        return (expanded, line_idx + 1)
+      }
+      None => {
+        line_idx += 1
+        if line_idx >= lines.length() {
+          // Unterminated quote: return what we have
+          let expanded = dotenv_expand_vars(
+            dotenv_unescape_double(buf),
+            env,
+          )
+          return (expanded, line_idx)
+        }
+        buf = buf + "\n" + lines[line_idx].trim(chars="\r").to_string()
+      }
+    }
+  }
+  // unreachable but needed for type checker
+  (buf, line_idx)
+}
+
+///|
+fn parse_dotenv_single_quoted(
+  first_raw : String,
+  lines : Array[String],
+  start_line : Int,
+) -> (String, Int) {
+  let mut buf = String::unsafe_substring(
+    first_raw,
+    start=1,
+    end=first_raw.length(),
+  )
+  let mut line_idx = start_line
+  while true {
+    match buf.find("'") {
+      Some(close_idx) => {
+        let inner = String::unsafe_substring(buf, start=0, end=close_idx)
+        return (inner, line_idx + 1)
+      }
+      None => {
+        line_idx += 1
+        if line_idx >= lines.length() {
+          return (buf, line_idx)
+        }
+        buf = buf + "\n" + lines[line_idx].trim(chars="\r").to_string()
+      }
+    }
+  }
+  // unreachable but needed for type checker
+  (buf, line_idx)
+}
+
+///|
+fn dotenv_unescape_double(text : String) -> String {
+  let buf = StringBuilder::new()
+  let mut i = 0
+  while i < text.length() {
+    if text.unsafe_get(i).to_int() == '\\'.to_int() && i + 1 < text.length() {
+      let next = text.unsafe_get(i + 1).to_int()
+      if next == 'n'.to_int() {
+        buf.write_char('\n')
+        i += 2
+      } else if next == 't'.to_int() {
+        buf.write_char('\t')
+        i += 2
+      } else if next == 'r'.to_int() {
+        buf.write_char('\r')
+        i += 2
+      } else if next == '\\'.to_int() {
+        buf.write_char('\\')
+        i += 2
+      } else if next == '"'.to_int() {
+        buf.write_char('"')
+        i += 2
+      } else {
+        buf.write_char('\\')
+        i += 1
+      }
+    } else {
+      buf.write_char(text.unsafe_get(i).to_int().unsafe_to_char())
+      i += 1
+    }
+  }
+  buf.to_string()
+}
+
+///|
+fn dotenv_strip_inline_comment(text : String) -> String {
+  // Look for # preceded by whitespace (not inside value)
+  let mut i = 0
+  while i < text.length() {
+    if text.unsafe_get(i).to_int() == '#'.to_int() && i > 0 {
+      let prev = text.unsafe_get(i - 1).to_int()
+      if prev == ' '.to_int() || prev == '\t'.to_int() {
+        return String::unsafe_substring(text, start=0, end=i)
+          .trim(chars=" \t")
+          .to_string()
+      }
+    }
+    i += 1
+  }
+  text
+}
+
+///|
+fn dotenv_expand_vars(text : String, env : Map[String, String]) -> String {
+  let buf = StringBuilder::new()
+  let mut i = 0
+  while i < text.length() {
+    if text.unsafe_get(i).to_int() == '$'.to_int() && i + 1 < text.length() {
+      if text.unsafe_get(i + 1).to_int() == '{'.to_int() {
+        // ${VAR} form
+        match dotenv_find_char(text, '}', i + 2) {
+          Some(close) => {
+            let var_name = String::unsafe_substring(
+              text,
+              start=i + 2,
+              end=close,
+            )
+            let resolved = match env.get(var_name) {
+              Some(v) => v
+              None => @xsys.get_env_var(var_name).unwrap_or("")
+            }
+            buf.write_string(resolved)
+            i = close + 1
+          }
+          None => {
+            buf.write_char('$')
+            i += 1
+          }
+        }
+      } else {
+        // $VAR form
+        let var_start = i + 1
+        let mut var_end = var_start
+        while var_end < text.length() {
+          let ch = text.unsafe_get(var_end).to_int()
+          if (ch >= 'A'.to_int() && ch <= 'Z'.to_int()) ||
+            (ch >= 'a'.to_int() && ch <= 'z'.to_int()) ||
+            (ch >= '0'.to_int() && ch <= '9'.to_int()) ||
+            ch == '_'.to_int() {
+            var_end += 1
+          } else {
+            break
+          }
+        }
+        if var_end > var_start {
+          let var_name = String::unsafe_substring(
+            text,
+            start=var_start,
+            end=var_end,
+          )
+          let resolved = match env.get(var_name) {
+            Some(v) => v
+            None => @xsys.get_env_var(var_name).unwrap_or("")
+          }
+          buf.write_string(resolved)
+          i = var_end
+        } else {
+          buf.write_char('$')
+          i += 1
+        }
+      }
+    } else {
+      buf.write_char(text.unsafe_get(i).to_int().unsafe_to_char())
+      i += 1
+    }
+  }
+  buf.to_string()
+}
+
+///|
+fn dotenv_find_unescaped_quote(text : String) -> Int? {
+  let quote_code = '"'.to_int()
+  let backslash_code = '\\'.to_int()
+  let mut i = 0
+  while i < text.length() {
+    if text.unsafe_get(i).to_int() == backslash_code && i + 1 < text.length() {
+      i += 2 // skip escaped character
+    } else if text.unsafe_get(i).to_int() == quote_code {
+      return Some(i)
+    } else {
+      i += 1
+    }
+  }
+  None
+}
+
+///|
+fn dotenv_find_char(text : String, ch : Char, start : Int) -> Int? {
+  let ch_code = ch.to_int()
+  let mut i = start
+  while i < text.length() {
+    if text.unsafe_get(i).to_int() == ch_code {
+      return Some(i)
+    }
+    i += 1
+  }
+  None
+}
+
+///|
+fn load_env_file(path : String) -> Array[String] {
+  let content = try @xfs.read_file_to_string(path) catch {
+    _ => return ["failed to read env file: " + path]
   } noraise {
     value => value
   }
-  for line_view in content.split("\n") {
-    let line = line_view.trim(chars=" \t\r").to_string()
-    if line.length() == 0 || line.has_prefix("#") {
-      continue
-    }
-    match line.find("=") {
-      Some(idx) => {
-        let key = String::unsafe_substring(line, start=0, end=idx)
-          .trim(chars=" \t")
-          .to_string()
-        let mut value = String::unsafe_substring(line, start=idx + 1, end=line.length())
-          .trim(chars=" \t")
-          .to_string()
-        // Strip surrounding quotes
-        if value.length() >= 2 {
-          if (value.has_prefix("\"") && value.has_suffix("\"")) ||
-            (value.has_prefix("'") && value.has_suffix("'")) {
-            value = String::unsafe_substring(value, start=1, end=value.length() - 1)
-          }
-        }
-        if key.length() > 0 {
-          @xsys.set_env_var(key, value)
-        }
-      }
-      None => continue
-    }
+  let result = parse_dotenv(content)
+  for key, value in result.entries {
+    @xsys.set_env_var(key, value)
   }
-  errors
+  result.errors
 }
 
 ///|
