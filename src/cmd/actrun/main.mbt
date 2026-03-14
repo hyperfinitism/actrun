@@ -173,6 +173,9 @@ fn usage_text() -> String {
   "  cache list                   List cache entries\n" +
   "  cache prune                  Delete cache entries\n" +
   "\n" +
+  "Other commands:\n" +
+  "  doctor                       Check tool dependencies\n" +
+  "\n" +
   "Workflow run flags:\n" +
   "  --repo <path>                Run from a git repository\n" +
   "  --workspace <path>           Workspace root for isolated execution\n" +
@@ -2182,6 +2185,81 @@ fn print_errors(errors : Array[String]) -> Unit {
 }
 
 ///|
+struct DoctorCheck {
+  name : String
+  bin : String
+  env_override : String
+  required : Bool
+}
+
+///|
+#cfg(target="native")
+async fn handle_doctor_command() -> Int {
+  let checks : Array[DoctorCheck] = [
+    { name: "git", bin: "git", env_override: "ACTRUN_GIT_BIN", required: true },
+    { name: "node", bin: "node", env_override: "ACTRUN_NODE_BIN", required: false },
+    { name: "docker", bin: "docker", env_override: "ACTRUN_DOCKER_BIN", required: false },
+    { name: "bash", bin: "bash", env_override: "", required: true },
+    { name: "sh", bin: "sh", env_override: "", required: true },
+    {
+      name: "wasmtime",
+      bin: "wasmtime",
+      env_override: "ACTRUN_WASM_BIN",
+      required: false,
+    },
+  ]
+  let mut has_error = false
+  for check in checks {
+    let bin = if check.env_override.length() > 0 {
+      @xsys.get_env_var(check.env_override).unwrap_or(check.bin)
+    } else {
+      check.bin
+    }
+    let (code, stdout, _) = @process.collect_output(bin, ["--version"], cwd=".")
+    if code == 0 {
+      let version = stdout.text().trim(chars=" \t\r\n").to_string()
+      let short_version = match version.find("\n") {
+        Some(idx) => String::unsafe_substring(version, start=0, end=idx)
+        None => version
+      }
+      println("ok  " + check.name + ": " + short_version)
+    } else if check.required {
+      println("ERR " + check.name + ": not found (required)")
+      has_error = true
+    } else {
+      let hint = if check.env_override.length() > 0 {
+        " (optional, override with " + check.env_override + ")"
+      } else {
+        " (optional)"
+      }
+      println("--  " + check.name + ": not found" + hint)
+    }
+  }
+  // Check .github/workflows/ exists
+  if @xfs.path_exists(".github/workflows") {
+    let entries = try @xfs.read_dir(".github/workflows") catch {
+      _ => []
+    } noraise {
+      value => value
+    }
+    let mut yml_count = 0
+    for entry in entries {
+      if entry.has_suffix(".yml") || entry.has_suffix(".yaml") {
+        yml_count += 1
+      }
+    }
+    println("ok  workflows: " + yml_count.to_string() + " found in .github/workflows/")
+  } else {
+    println("--  workflows: .github/workflows/ not found")
+  }
+  if has_error {
+    1
+  } else {
+    0
+  }
+}
+
+///|
 fn print_dry_run_plan(
   workflow : @ar.WorkflowSpec,
   lowered : @ar.LoweringResult,
@@ -3478,6 +3556,13 @@ async fn main {
       (cli_args[1] == "--help" || cli_args[1] == "-h" || cli_args[1] == "help")
     ) {
     println(usage_text())
+    return
+  }
+  if cli_args.length() > 1 && cli_args[1] == "doctor" {
+    let exit_code = handle_doctor_command()
+    if exit_code != 0 {
+      @xsys.exit(exit_code)
+    }
     return
   }
   if cli_args.length() > 1 && cli_args[1] == "workflow" {
