@@ -1,0 +1,11 @@
+name: remote-docker-action
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/hello-world-docker-action uses runs.using: docker
+      - id: hello
+        uses: actions/hello-world-docker-action@v2
+        with:
+          who-to-greet: actrun

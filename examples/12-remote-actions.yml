@@ -1,0 +1,21 @@
+name: remote-actions
+'on': push
+jobs:
+  node-action:
+    runs-on: ubuntu-latest
+    steps:
+      # Remote node action from GitHub
+      - id: hello
+        uses: actions/hello-world-javascript-action@v1.1
+        with:
+          who-to-greet: actrun
+      - run: echo "time=${{ steps.hello.outputs.time }}"
+
+  docker-action:
+    runs-on: ubuntu-latest
+    steps:
+      # Direct docker image action
+      - id: alpine
+        uses: docker://alpine:3.21
+        with:
+          args: echo hello-from-docker
