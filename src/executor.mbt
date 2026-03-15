@@ -2841,6 +2841,8 @@ async fn exec_git_clone_into(
   ref_name? : String = "",
   fetch_tags? : Bool = true,
   show_progress? : Bool = false,
+  clone_url? : String = "",
+  filter? : String = "",
 ) -> (Int, String, String) {
   let args : Array[String] = ["clone"]
   if not(show_progress) {
@@ -2856,11 +2858,20 @@ async fn exec_git_clone_into(
     args.push("--depth")
     args.push(fetch_depth.to_string())
   }
+  if filter.length() > 0 {
+    args.push("--filter")
+    args.push(filter)
+  }
   if ref_name.length() > 0 {
     args.push("--branch")
     args.push(ref_name)
   }
-  args.push("file://" + absolute_exec_path(source_root))
+  let url = if clone_url.length() > 0 {
+    clone_url
+  } else {
+    "file://" + absolute_exec_path(source_root)
+  }
+  args.push(url)
   args.push(temp_root)
   exec_git_command_text(git_bin, args, ".")
 }
@@ -2962,6 +2973,8 @@ async fn exec_git_clone_checkout(
   persist_credentials? : Bool = true,
   set_safe_directory? : Bool = true,
   lfs? : Bool = false,
+  clone_url? : String = "",
+  filter? : String = "",
 ) -> TaskRunReport? {
   let temp_root = checkout_temp_root(workspace_root, plan.id)
   let git_bin = configured_exec_bin("ACTRUN_GIT_BIN", resolved_plan_env, "git")
@@ -2981,6 +2994,8 @@ async fn exec_git_clone_checkout(
       ref_name=checkout_ref,
       fetch_tags~,
       show_progress~,
+      clone_url~,
+      filter~,
     )
     if branch_code == 0 {
       clone_ready = true
@@ -2997,6 +3012,8 @@ async fn exec_git_clone_checkout(
           0,
           fetch_tags~,
           show_progress~,
+          clone_url~,
+          filter~,
         )
         if fallback_code != 0 {
           return Some(
@@ -3037,6 +3054,8 @@ async fn exec_git_clone_checkout(
       fetch_depth,
       fetch_tags~,
       show_progress~,
+      clone_url~,
+      filter~,
     )
     if clone_code != 0 {
       return Some(
@@ -3063,6 +3082,8 @@ async fn exec_git_clone_checkout(
             0,
             fetch_tags~,
             show_progress~,
+            clone_url~,
+            filter~,
           )
           if full_clone_code != 0 {
             return Some(
@@ -4022,13 +4043,28 @@ async fn execute_builtin_checkout_native(
   let lfs = parse_bool_false_default(
     resolved_plan_env.get("INPUT_LFS").unwrap_or("false"),
   )
+  let repository_input = resolved_plan_env
+    .get("INPUT_REPOSITORY")
+    .unwrap_or("")
+    .trim(chars=" \t\r\n")
+    .to_string()
+  let filter_input = resolved_plan_env
+    .get("INPUT_FILTER")
+    .unwrap_or("")
+    .trim(chars=" \t\r\n")
+    .to_string()
+  let clone_url = if repository_input.length() > 0 {
+    "https://github.com/" + repository_input + ".git"
+  } else {
+    ""
+  }
   let source_root = resolve_task_cwd(workspace_root, "")
   let checkout_root = if path_input.length() > 0 {
     resolve_task_cwd(workspace_root, path_input)
   } else {
     source_root
   }
-  if exec_has_git_repo(source_root) {
+  if exec_has_git_repo(source_root) || clone_url.length() > 0 {
     match
       exec_git_clone_checkout(
         plan,
@@ -4043,6 +4079,8 @@ async fn execute_builtin_checkout_native(
         persist_credentials~,
         set_safe_directory~,
         lfs~,
+        clone_url~,
+        filter=filter_input,
       ) {
       Some(report) => return report
       None => ()
@@ -4139,8 +4177,16 @@ async fn execute_setup_node_native(
       plan, workspace_root, "failed to prepare setup-node shim",
     )
   }
+  let architecture_input = resolved_plan_env
+    .get("INPUT_ARCHITECTURE")
+    .unwrap_or("")
+    .trim(chars=" \t\r\n")
+    .to_string()
   let env_updates : Map[String, String] = {}
   let output_values : Map[String, String] = { "node-version": node_version }
+  if architecture_input.length() > 0 {
+    output_values["node-architecture"] = architecture_input
+  }
   let state_updates : Map[String, String] = {}
   if normalized_cache_input.length() > 0 {
     if normalized_cache_input != "npm" {
