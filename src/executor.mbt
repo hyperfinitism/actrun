@@ -1135,6 +1135,105 @@ fn plan_job_service_network_name(
 }
 
 ///|
+fn resolve_expression_value(
+  expression : String,
+  text : String,
+  open_idx : Int,
+  close_idx : Int,
+  state : JobRuntimeState,
+  workspace_root : String,
+  env_context : Map[String, String],
+  job_context : Map[String, String],
+  vars_context : Map[String, String],
+  secrets_context : Map[String, String],
+  github_context : Map[String, String],
+  runner_context : Map[String, String],
+  needs_outputs : Map[String, Map[String, String]],
+  needs_results : Map[String, String],
+  dispatch_inputs : Map[String, String],
+) -> String {
+  match step_output_expr_name(expression) {
+    Some((step_id, output_name)) =>
+      return resolve_step_output(state, step_id, output_name)
+    None => ()
+  }
+  match step_status_expr_name(expression, ".outcome") {
+    Some(step_id) => return resolve_step_outcome(state, step_id)
+    None => ()
+  }
+  match step_status_expr_name(expression, ".conclusion") {
+    Some(step_id) => return resolve_step_conclusion(state, step_id)
+    None => ()
+  }
+  match needs_output_expr_name(expression) {
+    Some((job_id, output_name)) =>
+      return resolve_needs_output(needs_outputs, job_id, output_name)
+    None => ()
+  }
+  match needs_result_expr_name(expression) {
+    Some(job_id) => return resolve_needs_result(needs_results, job_id)
+    None => ()
+  }
+  match env_expr_name(expression) {
+    Some(name) =>
+      return map_get_case_insensitive(env_context, name).unwrap_or("")
+    None => ()
+  }
+  match job_expr_name(expression) {
+    Some(name) =>
+      return map_get_case_insensitive(job_context, name).unwrap_or("")
+    None => ()
+  }
+  match dispatch_inputs_expr_name(expression) {
+    Some(name) =>
+      return map_get_case_insensitive(dispatch_inputs, name).unwrap_or("")
+    None => ()
+  }
+  match vars_expr_name(expression) {
+    Some(name) =>
+      return map_get_case_insensitive(vars_context, name).unwrap_or("")
+    None => ()
+  }
+  match secrets_expr_name(expression) {
+    Some(name) =>
+      return map_get_case_insensitive(secrets_context, name).unwrap_or("")
+    None => ()
+  }
+  match github_expr_name(expression) {
+    Some(name) =>
+      return map_get_case_insensitive(github_context, name).unwrap_or("")
+    None => ()
+  }
+  match runner_expr_name(expression) {
+    Some(name) =>
+      return map_get_case_insensitive(runner_context, name).unwrap_or("")
+    None => ()
+  }
+  match
+    evaluate_string_function_expression(
+      expression,
+      new_if_condition_context(
+        step_outputs=state.step_outputs,
+        step_outcomes=state.step_outcomes,
+        step_conclusions=state.step_conclusions,
+        workspace_root~,
+        env_context~,
+        job_context~,
+        vars_context~,
+        secrets_context~,
+        github_context~,
+        runner_context~,
+        needs_outputs~,
+        needs_results~,
+      ),
+    ) {
+    Some(value) => return value
+    None => ()
+  }
+  exec_text_slice(text, open_idx, close_idx + 2)
+}
+
+///|
 fn substitute_runtime_text(
   text : String,
   state : JobRuntimeState,
@@ -1158,140 +1257,13 @@ fn substitute_runtime_text(
         match find_exec_substring(text, "}}", open_idx + 3) {
           Some(close_idx) => {
             let expression = exec_text_slice(text, open_idx + 3, close_idx)
-            match step_output_expr_name(expression) {
-              Some((step_id, output_name)) =>
-                chunks.push(resolve_step_output(state, step_id, output_name))
-              None =>
-                match step_status_expr_name(expression, ".outcome") {
-                  Some(step_id) =>
-                    chunks.push(resolve_step_outcome(state, step_id))
-                  None =>
-                    match step_status_expr_name(expression, ".conclusion") {
-                      Some(step_id) =>
-                        chunks.push(resolve_step_conclusion(state, step_id))
-                      None =>
-                        match needs_output_expr_name(expression) {
-                          Some((job_id, output_name)) =>
-                            chunks.push(
-                              resolve_needs_output(
-                                needs_outputs, job_id, output_name,
-                              ),
-                            )
-                          None =>
-                            match needs_result_expr_name(expression) {
-                              Some(job_id) =>
-                                chunks.push(
-                                  resolve_needs_result(needs_results, job_id),
-                                )
-                              None =>
-                                match env_expr_name(expression) {
-                                  Some(name) =>
-                                    chunks.push(
-                                      map_get_case_insensitive(
-                                        env_context, name,
-                                      ).unwrap_or(""),
-                                    )
-                                  None =>
-                                    match job_expr_name(expression) {
-                                      Some(name) =>
-                                        chunks.push(
-                                          map_get_case_insensitive(
-                                            job_context, name,
-                                          ).unwrap_or(""),
-                                        )
-                                      None =>
-                                        match
-                                          dispatch_inputs_expr_name(expression) {
-                                          Some(name) =>
-                                            chunks.push(
-                                              map_get_case_insensitive(
-                                                dispatch_inputs, name,
-                                              ).unwrap_or(""),
-                                            )
-                                          None =>
-                                            match vars_expr_name(expression) {
-                                              Some(name) =>
-                                                chunks.push(
-                                                  map_get_case_insensitive(
-                                                    vars_context, name,
-                                                  ).unwrap_or(""),
-                                                )
-                                              None =>
-                                                match
-                                                  secrets_expr_name(expression) {
-                                                  Some(name) =>
-                                                    chunks.push(
-                                                      map_get_case_insensitive(
-                                                        secrets_context, name,
-                                                      ).unwrap_or(""),
-                                                    )
-                                                  None =>
-                                                    match
-                                                      github_expr_name(
-                                                        expression,
-                                                      ) {
-                                                      Some(name) =>
-                                                        chunks.push(
-                                                          map_get_case_insensitive(
-                                                            github_context, name,
-                                                          ).unwrap_or(""),
-                                                        )
-                                                      None =>
-                                                        match
-                                                          runner_expr_name(
-                                                            expression,
-                                                          ) {
-                                                          Some(name) =>
-                                                            chunks.push(
-                                                              map_get_case_insensitive(
-                                                                runner_context, name,
-                                                              ).unwrap_or(""),
-                                                            )
-                                                          None =>
-                                                            match
-                                                              evaluate_string_function_expression(
-                                                                expression,
-                                                                new_if_condition_context(
-                                                                  step_outputs=state.step_outputs,
-                                                                  step_outcomes=state.step_outcomes,
-                                                                  step_conclusions=state.step_conclusions,
-                                                                  workspace_root~,
-                                                                  env_context~,
-                                                                  job_context~,
-                                                                  vars_context~,
-                                                                  secrets_context~,
-                                                                  github_context~,
-                                                                  runner_context~,
-                                                                  needs_outputs~,
-                                                                  needs_results~,
-                                                                ),
-                                                              ) {
-                                                              Some(value) =>
-                                                                chunks.push(
-                                                                  value,
-                                                                )
-                                                              None =>
-                                                                chunks.push(
-                                                                  exec_text_slice(
-                                                                    text,
-                                                                    open_idx,
-                                                                    close_idx +
-                                                                    2,
-                                                                  ),
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            chunks.push(
+              resolve_expression_value(
+                expression, text, open_idx, close_idx, state, workspace_root, env_context,
+                job_context, vars_context, secrets_context, github_context, runner_context,
+                needs_outputs, needs_results, dispatch_inputs,
+              ),
+            )
             idx = close_idx + 2
           }
           None => {
@@ -2242,6 +2214,21 @@ fn task_report_failure(
 }
 
 ///|
+fn failure_execution_result(
+  plan : TaskPlan,
+  workspace_root : String,
+  message : String,
+) -> TaskExecutionResult {
+  {
+    report: task_report_failure(plan, workspace_root, message),
+    env_updates: {},
+    path_entries: [],
+    output_values: {},
+    state_updates: {},
+  }
+}
+
+///|
 fn task_report_skipped(
   plan : TaskPlan,
   workspace_root : String,
@@ -2609,9 +2596,15 @@ fn exec_prune_sparse_checkout(
 }
 
 ///|
-fn parse_checkout_cone_mode(value : String) -> Bool {
+fn parse_bool_true_default(value : String) -> Bool {
   let normalized = value.trim(chars=" \t\r\n").to_lower()
   normalized != "false" && normalized != "0" && normalized != "no"
+}
+
+///|
+fn parse_bool_false_default(value : String) -> Bool {
+  let normalized = value.trim(chars=" \t\r\n").to_lower()
+  normalized == "true" || normalized == "1" || normalized == "yes"
 }
 
 ///|
@@ -2629,12 +2622,6 @@ fn parse_checkout_fetch_depth(value : String) -> Int? {
 }
 
 ///|
-fn parse_checkout_clean(value : String) -> Bool {
-  let normalized = value.trim(chars=" \t\r\n").to_lower()
-  normalized != "false" && normalized != "0" && normalized != "no"
-}
-
-///|
 fn parse_checkout_submodules(value : String) -> String {
   let normalized = value.trim(chars=" \t\r\n").to_lower()
   if normalized == "recursive" {
@@ -2644,30 +2631,6 @@ fn parse_checkout_submodules(value : String) -> String {
   } else {
     ""
   }
-}
-
-///|
-fn parse_checkout_bool_true_default(value : String) -> Bool {
-  let normalized = value.trim(chars=" \t\r\n").to_lower()
-  normalized != "false" && normalized != "0" && normalized != "no"
-}
-
-///|
-fn parse_checkout_bool_false_default(value : String) -> Bool {
-  let normalized = value.trim(chars=" \t\r\n").to_lower()
-  normalized == "true" || normalized == "1" || normalized == "yes"
-}
-
-///|
-fn parse_cache_lookup_only(value : String) -> Bool {
-  let normalized = value.trim(chars=" \t\r\n").to_lower()
-  normalized == "true" || normalized == "1" || normalized == "yes"
-}
-
-///|
-fn parse_cache_fail_on_cache_miss(value : String) -> Bool {
-  let normalized = value.trim(chars=" \t\r\n").to_lower()
-  normalized == "true" || normalized == "1" || normalized == "yes"
 }
 
 ///|
@@ -2682,18 +2645,6 @@ fn parse_artifact_if_no_files_found(value : String) -> String? {
   } else {
     None
   }
-}
-
-///|
-fn parse_artifact_overwrite(value : String) -> Bool {
-  let normalized = value.trim(chars=" \t\r\n").to_lower()
-  normalized == "true" || normalized == "1" || normalized == "yes"
-}
-
-///|
-fn parse_artifact_merge_multiple(value : String) -> Bool {
-  let normalized = value.trim(chars=" \t\r\n").to_lower()
-  normalized == "true" || normalized == "1" || normalized == "yes"
 }
 
 ///|
@@ -4040,7 +3991,7 @@ async fn execute_builtin_checkout_native(
   let sparse_input = resolved_plan_env
     .get("INPUT_SPARSE_CHECKOUT")
     .unwrap_or("")
-  let clean = parse_checkout_clean(
+  let clean = parse_bool_true_default(
     resolved_plan_env.get("INPUT_CLEAN").unwrap_or("true"),
   )
   let fetch_depth = match
@@ -4053,22 +4004,22 @@ async fn execute_builtin_checkout_native(
         plan, workspace_root, "checkout fetch-depth must be a non-negative integer",
       )
   }
-  let cone_mode = parse_checkout_cone_mode(
+  let cone_mode = parse_bool_true_default(
     resolved_plan_env.get("INPUT_SPARSE_CHECKOUT_CONE_MODE").unwrap_or("true"),
   )
-  let fetch_tags = parse_checkout_bool_true_default(
+  let fetch_tags = parse_bool_true_default(
     resolved_plan_env.get("INPUT_FETCH_TAGS").unwrap_or("false"),
   )
-  let show_progress = parse_checkout_bool_true_default(
+  let show_progress = parse_bool_true_default(
     resolved_plan_env.get("INPUT_SHOW_PROGRESS").unwrap_or("true"),
   )
-  let persist_credentials = parse_checkout_bool_true_default(
+  let persist_credentials = parse_bool_true_default(
     resolved_plan_env.get("INPUT_PERSIST_CREDENTIALS").unwrap_or("true"),
   )
-  let set_safe_directory = parse_checkout_bool_true_default(
+  let set_safe_directory = parse_bool_true_default(
     resolved_plan_env.get("INPUT_SET_SAFE_DIRECTORY").unwrap_or("true"),
   )
-  let lfs = parse_checkout_bool_false_default(
+  let lfs = parse_bool_false_default(
     resolved_plan_env.get("INPUT_LFS").unwrap_or("false"),
   )
   let source_root = resolve_task_cwd(workspace_root, "")
@@ -4162,21 +4113,15 @@ async fn execute_setup_node_native(
     cwd=resolve_task_cwd(workspace_root, ""),
   )
   if version_code != 0 {
-    return {
-      report: task_report_failure(
-        plan,
-        workspace_root,
-        exec_command_message(
-          version_stdout.text(),
-          version_stderr.text(),
-          "failed to inspect node version",
-        ),
+    return failure_execution_result(
+      plan,
+      workspace_root,
+      exec_command_message(
+        version_stdout.text(),
+        version_stderr.text(),
+        "failed to inspect node version",
       ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    )
   }
   let actual_version = version_stdout.text().trim(chars=" \t\r\n").to_string()
   let explicit_version = resolved_plan_env
@@ -4190,32 +4135,20 @@ async fn execute_setup_node_native(
   let node_version = normalize_setup_node_version(version_input, actual_version)
   guard write_setup_node_shim(workspace_root, plan.id, node_bin, node_version)
     is Some(shim_dir) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "failed to prepare setup-node shim",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "failed to prepare setup-node shim",
+    )
   }
   let env_updates : Map[String, String] = {}
   let output_values : Map[String, String] = { "node-version": node_version }
   let state_updates : Map[String, String] = {}
   if normalized_cache_input.length() > 0 {
     if normalized_cache_input != "npm" {
-      return {
-        report: task_report_failure(
-          plan,
-          workspace_root,
-          "setup-node cache '\{normalized_cache_input}' is not supported yet",
-        ),
-        env_updates: {},
-        path_entries: [],
-        output_values: {},
-        state_updates: {},
-      }
+      return failure_execution_result(
+        plan,
+        workspace_root,
+        "setup-node cache '\{normalized_cache_input}' is not supported yet",
+      )
     }
     let dependency_input = resolved_plan_env
       .get("INPUT_CACHE_DEPENDENCY_PATH")
@@ -4226,42 +4159,24 @@ async fn execute_setup_node_native(
       ) {
       Ok(paths) => paths
       Err(message) =>
-        return {
-          report: task_report_failure(plan, workspace_root, message),
-          env_updates: {},
-          path_entries: [],
-          output_values: {},
-          state_updates: {},
-        }
+        return failure_execution_result(plan, workspace_root, message)
     }
     guard compute_setup_node_cache_key(
         workspace_root, normalized_cache_input, dependency_paths,
       )
       is Some(cache_key) else {
-      return {
-        report: task_report_failure(
-          plan, workspace_root, "failed to compute setup-node cache key",
-        ),
-        env_updates: {},
-        path_entries: [],
-        output_values: {},
-        state_updates: {},
-      }
+      return failure_execution_result(
+        plan, workspace_root, "failed to compute setup-node cache key",
+      )
     }
     let cache_relative_path = setup_node_cache_relative_path(
       normalized_cache_input,
     )
     let cache_abs_path = resolve_task_cwd(workspace_root, cache_relative_path)
     if not(ensure_exec_dir_recursive(cache_abs_path)) {
-      return {
-        report: task_report_failure(
-          plan, workspace_root, "failed to prepare setup-node cache directory",
-        ),
-        env_updates: {},
-        path_entries: [],
-        output_values: {},
-        state_updates: {},
-      }
+      return failure_execution_result(
+        plan, workspace_root, "failed to prepare setup-node cache directory",
+      )
     }
     let cache_result = execute_restore_cache_native(plan, workspace_root, {
       "INPUT_KEY": cache_key,
@@ -4285,7 +4200,7 @@ async fn execute_setup_node_native(
     resolved_plan_env.get("INPUT_REGISTRY_URL").unwrap_or(""),
   )
   if registry_url.length() > 0 {
-    let always_auth = parse_checkout_bool_false_default(
+    let always_auth = parse_bool_false_default(
       resolved_plan_env.get("INPUT_ALWAYS_AUTH").unwrap_or("false"),
     )
     let scope = resolved_plan_env
@@ -4298,15 +4213,9 @@ async fn execute_setup_node_native(
     if not(
         write_setup_node_npmrc(npmrc_path, registry_url, always_auth~, scope~),
       ) {
-      return {
-        report: task_report_failure(
-          plan, workspace_root, "failed to write setup-node npm auth config",
-        ),
-        env_updates: {},
-        path_entries: [],
-        output_values: {},
-        state_updates: {},
-      }
+      return failure_execution_result(
+        plan, workspace_root, "failed to write setup-node npm auth config",
+      )
     }
     let node_auth_token = resolved_plan_env
       .get("NODE_AUTH_TOKEN")
@@ -4379,7 +4288,7 @@ fn execute_upload_artifact_native(
 ) -> TaskRunReport {
   let name = resolved_plan_env.get("INPUT_NAME").unwrap_or("")
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
-  let overwrite = parse_artifact_overwrite(
+  let overwrite = parse_bool_false_default(
     resolved_plan_env.get("INPUT_OVERWRITE").unwrap_or("false"),
   )
   if name.length() == 0 {
@@ -4387,7 +4296,7 @@ fn execute_upload_artifact_native(
       plan, workspace_root, "upload-artifact requires with.name",
     )
   }
-  let include_hidden = parse_checkout_bool_false_default(
+  let include_hidden = parse_bool_false_default(
     resolved_plan_env.get("INPUT_INCLUDE_HIDDEN_FILES").unwrap_or("false"),
   )
   let upload_paths = split_nonempty_lines(path_input)
@@ -4477,7 +4386,7 @@ fn execute_download_artifact_native(
   let name = resolved_plan_env.get("INPUT_NAME").unwrap_or("")
   let pattern = resolved_plan_env.get("INPUT_PATTERN").unwrap_or("")
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
-  let merge_multiple = parse_artifact_merge_multiple(
+  let merge_multiple = parse_bool_false_default(
     resolved_plan_env.get("INPUT_MERGE_MULTIPLE").unwrap_or("false"),
   )
   let destination = if path_input.length() > 0 {
@@ -4649,13 +4558,7 @@ fn cache_input_result_failure(
   } else {
     action_name + " requires with.path"
   }
-  {
-    report: task_report_failure(plan, workspace_root, message),
-    env_updates: {},
-    path_entries: [],
-    output_values: {},
-    state_updates: {},
-  }
+  failure_execution_result(plan, workspace_root, message)
 }
 
 ///|
@@ -4734,10 +4637,10 @@ fn execute_restore_cache_native(
   let restore_keys_input = resolved_plan_env
     .get("INPUT_RESTORE_KEYS")
     .unwrap_or("")
-  let lookup_only = parse_cache_lookup_only(
+  let lookup_only = parse_bool_false_default(
     resolved_plan_env.get("INPUT_LOOKUP_ONLY").unwrap_or(""),
   )
-  let fail_on_cache_miss = parse_cache_fail_on_cache_miss(
+  let fail_on_cache_miss = parse_bool_false_default(
     resolved_plan_env.get("INPUT_FAIL_ON_CACHE_MISS").unwrap_or(""),
   )
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
@@ -4759,28 +4662,16 @@ fn execute_restore_cache_native(
     Partial(_) => "false"
     Miss =>
       if fail_on_cache_miss {
-        return {
-          report: task_report_failure(
-            plan,
-            workspace_root,
-            "cache miss for key '\{key}' and fail-on-cache-miss is true",
-          ),
-          env_updates: {},
-          path_entries: [],
-          output_values: {},
-          state_updates: {},
-        }
+        return failure_execution_result(
+          plan,
+          workspace_root,
+          "cache miss for key '\{key}' and fail-on-cache-miss is true",
+        )
       } else {
         "false"
       }
     Err(message) =>
-      return {
-        report: task_report_failure(plan, workspace_root, message),
-        env_updates: {},
-        path_entries: [],
-        output_values: {},
-        state_updates: {},
-      }
+      return failure_execution_result(plan, workspace_root, message)
   }
   {
     report: task_report_success(plan, workspace_root),
@@ -4802,13 +4693,13 @@ fn execute_cache_action_native(
   let restore_keys_input = resolved_plan_env
     .get("INPUT_RESTORE_KEYS")
     .unwrap_or("")
-  let lookup_only = parse_cache_lookup_only(
+  let lookup_only = parse_bool_false_default(
     resolved_plan_env.get("INPUT_LOOKUP_ONLY").unwrap_or(""),
   )
-  let fail_on_cache_miss = parse_cache_fail_on_cache_miss(
+  let fail_on_cache_miss = parse_bool_false_default(
     resolved_plan_env.get("INPUT_FAIL_ON_CACHE_MISS").unwrap_or(""),
   )
-  let save_always = parse_cache_lookup_only(
+  let save_always = parse_bool_false_default(
     resolved_plan_env.get("INPUT_SAVE_ALWAYS").unwrap_or("false"),
   )
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
@@ -4846,13 +4737,7 @@ fn execute_cache_action_native(
         ""
       }
     Err(message) =>
-      return {
-        report: task_report_failure(plan, workspace_root, message),
-        env_updates: {},
-        path_entries: [],
-        output_values: {},
-        state_updates: {},
-      }
+      return failure_execution_result(plan, workspace_root, message)
   }
   {
     report: task_report_success(plan, workspace_root),
@@ -5056,41 +4941,23 @@ async fn execute_wasm_action_native(
   runner_ctx : Map[String, String],
 ) -> TaskExecutionResult {
   guard action.entrypoint is Some(entrypoint) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "wasm action is missing an entrypoint",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "wasm action is missing an entrypoint",
+    )
   }
   guard prepare_step_file_commands(plan.id, workspace_root)
     is Some(file_commands) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "failed to prepare step file commands",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "failed to prepare step file commands",
+    )
   }
   guard resolve_wasm_module_path(resolved_plan_env, workspace_root, entrypoint)
     is Some(module_path) else {
-    return {
-      report: task_report_failure(
-        plan,
-        workspace_root,
-        "wasm module for '\{entrypoint}' was not found",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan,
+      workspace_root,
+      "wasm module for '\{entrypoint}' was not found",
+    )
   }
   let env = default_runner_env(
     workflow_name, plan, workspace_root, github_ctx, resolved_plan_env, file_commands,
@@ -5138,27 +5005,15 @@ async fn execute_node_action_native(
   runner_ctx : Map[String, String],
 ) -> TaskExecutionResult {
   guard action.entrypoint is Some(entrypoint) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "node action is missing an entrypoint",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "node action is missing an entrypoint",
+    )
   }
   guard prepare_step_file_commands(plan.id, workspace_root)
     is Some(file_commands) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "failed to prepare step file commands",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "failed to prepare step file commands",
+    )
   }
   let env = default_runner_env(
     workflow_name, plan, workspace_root, github_ctx, resolved_plan_env, file_commands,
@@ -5206,27 +5061,15 @@ async fn execute_docker_action_native(
   network_name : String?,
 ) -> TaskExecutionResult {
   guard action.image is Some(image_source) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "docker action is missing an image",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "docker action is missing an image",
+    )
   }
   guard prepare_step_file_commands(plan.id, workspace_root)
     is Some(file_commands) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "failed to prepare step file commands",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "failed to prepare step file commands",
+    )
   }
   let env = default_runner_env(
     workflow_name, plan, workspace_root, github_ctx, resolved_plan_env, file_commands,
@@ -5353,27 +5196,15 @@ async fn execute_job_container_node_action_native(
   network_name : String?,
 ) -> TaskExecutionResult {
   guard action.entrypoint is Some(entrypoint) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "node action is missing an entrypoint",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "node action is missing an entrypoint",
+    )
   }
   guard prepare_step_file_commands(plan.id, workspace_root)
     is Some(file_commands) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "failed to prepare step file commands",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "failed to prepare step file commands",
+    )
   }
   let merged_plan_env = merge_runner_env(container.env, resolved_plan_env)
   let env = default_runner_env(
@@ -5394,17 +5225,11 @@ async fn execute_job_container_node_action_native(
   )
   match ensure_container_registry_login(docker_bin, workspace_abs, container) {
     Some(message) =>
-      return {
-        report: task_report_failure(
-          plan,
-          container_cwd,
-          "docker login failed: " + message,
-        ),
-        env_updates: {},
-        path_entries: [],
-        output_values: {},
-        state_updates: {},
-      }
+      return failure_execution_result(
+        plan,
+        container_cwd,
+        "docker login failed: " + message,
+      )
     None => ()
   }
   let run_args : Array[String] = [
@@ -5506,17 +5331,11 @@ async fn execute_job_container_run_native(
   )
   match ensure_container_registry_login(docker_bin, workspace_abs, container) {
     Some(message) =>
-      return {
-        report: task_report_failure(
-          plan,
-          container_cwd,
-          "docker login failed: " + message,
-        ),
-        env_updates: {},
-        path_entries: [],
-        output_values: {},
-        state_updates: {},
-      }
+      return failure_execution_result(
+        plan,
+        container_cwd,
+        "docker login failed: " + message,
+      )
     None => ()
   }
   let container_shell = if resolved_shell.trim(chars=" ").length() == 0 {
@@ -5609,15 +5428,9 @@ async fn execute_action_plan_native(
   job_services : Map[String, Map[String, JobContainerSpec]],
 ) -> TaskExecutionResult {
   guard plan.action is Some(action) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "missing action metadata",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "missing action metadata",
+    )
   }
   let github_ctx = github_context(
     workflow_name, plan, workspace_root, push_event,
@@ -5729,17 +5542,11 @@ async fn execute_action_plan_native(
       workflow_name, plan, action, workspace_root, merged_plan_env, github_ctx, runner_ctx,
     )
   }
-  {
-    report: task_report_failure(
-      plan,
-      workspace_root,
-      "action backend '\{action.backend}' is not supported",
-    ),
-    env_updates: {},
-    path_entries: [],
-    output_values: {},
-    state_updates: {},
-  }
+  failure_execution_result(
+    plan,
+    workspace_root,
+    "action backend '\{action.backend}' is not supported",
+  )
 }
 
 ///|
@@ -5841,15 +5648,9 @@ async fn execute_task_plan_native(
   }
   guard prepare_step_file_commands(plan.id, workspace_root)
     is Some(file_commands) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "failed to prepare step file commands",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "failed to prepare step file commands",
+    )
   }
   let github_ctx = github_context(
     workflow_name, plan, workspace_root, push_event,
@@ -5903,29 +5704,17 @@ async fn execute_task_plan_native(
   let unsupported_command = unsupported_workflow_command(plan, resolved_script)
   guard unsupported_command is None else {
     let command_name = unsupported_command.unwrap_or("")
-    return {
-      report: task_report_failure(
-        plan,
-        workspace_root,
-        "workflow command '\{command_name}' is not supported in MVP",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan,
+      workspace_root,
+      "workflow command '\{command_name}' is not supported in MVP",
+    )
   }
   let cwd = resolve_task_cwd(workspace_root, resolved_working_directory)
   guard write_exec_text(file_commands.script_path, resolved_script) else {
-    return {
-      report: task_report_failure(
-        plan, workspace_root, "failed to prepare step script file",
-      ),
-      env_updates: {},
-      path_entries: [],
-      output_values: {},
-      state_updates: {},
-    }
+    return failure_execution_result(
+      plan, workspace_root, "failed to prepare step script file",
+    )
   }
   match job_containers.get(plan.job_id) {
     Some(container) =>
