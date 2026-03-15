@@ -17,6 +17,7 @@ struct CliOptions {
   after_sha : String
   changed_paths : Array[String]
   skip_actions : Array[String]
+  dispatch_inputs : Map[String, String]
   dry_run : Bool
 }
 
@@ -192,6 +193,7 @@ fn usage_text() -> String {
   "  --local                      Shorthand for --workspace-mode local\n" +
   "  --worktree                   Shorthand for --workspace-mode worktree\n" +
   "  --tmp                        Shorthand for --workspace-mode tmp\n" +
+  "  --input <key=value>          Set workflow_dispatch input (repeatable)\n" +
   "  --env <file>                 Load environment variables from file\n" +
   "\n" +
   "Storage flags:\n" +
@@ -1726,6 +1728,7 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
   let mut after_sha = ""
   let changed_paths : Array[String] = []
   let skip_actions : Array[String] = []
+  let dispatch_inputs : Map[String, String] = {}
   let mut dry_run = false
   let mut index = 1
 
@@ -1767,6 +1770,7 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
       arg == "--after" ||
       arg == "--changed" ||
       arg == "--skip-action" ||
+      arg == "--input" ||
       arg == "--env" {
       if index + 1 >= args.length() {
         errors.push("missing value for " + arg)
@@ -1803,6 +1807,19 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
         after_sha = value
       } else if arg == "--skip-action" {
         skip_actions.push(value)
+      } else if arg == "--input" {
+        match value.find("=") {
+          Some(eq) => {
+            let k = String::unsafe_substring(value, start=0, end=eq)
+            let v = String::unsafe_substring(
+              value,
+              start=eq + 1,
+              end=value.length(),
+            )
+            dispatch_inputs[k] = v
+          }
+          None => errors.push("--input value must be key=value, got: " + value)
+        }
       } else if arg == "--env" {
         for err in load_env_file(value) {
           errors.push(err)
@@ -1861,6 +1878,7 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
       after_sha,
       changed_paths,
       skip_actions,
+      dispatch_inputs,
       dry_run,
     }),
     errors,
@@ -3522,6 +3540,7 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
     lowered,
     workspace_root=execution_root,
     push_event=Some(trigger_event),
+    dispatch_inputs=options.dispatch_inputs,
   )
   let report = @ar.mask_report_secrets(raw_report, @ar.collect_secret_values())
   if report.issues.length() > 0 {

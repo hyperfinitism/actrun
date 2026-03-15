@@ -694,6 +694,18 @@ fn secrets_expr_name(expression : String) -> String? {
 }
 
 ///|
+fn dispatch_inputs_expr_name(expression : String) -> String? {
+  let trimmed = expression.trim(chars=" \t\n\r").to_string()
+  if trimmed.has_prefix("inputs.") && trimmed.length() > 7 {
+    Some(exec_text_slice(trimmed, 7, trimmed.length()))
+  } else if trimmed.has_prefix("github.event.inputs.") && trimmed.length() > 20 {
+    Some(exec_text_slice(trimmed, 20, trimmed.length()))
+  } else {
+    None
+  }
+}
+
+///|
 fn resolve_step_output(
   state : JobRuntimeState,
   step_id : String,
@@ -1125,6 +1137,7 @@ fn substitute_runtime_text(
   runner_context : Map[String, String],
   needs_outputs : Map[String, Map[String, String]],
   needs_results : Map[String, String],
+  dispatch_inputs? : Map[String, String] = {},
 ) -> String {
   let vars_context = runner_vars_context()
   let secrets_context = runner_secrets_context()
@@ -1179,71 +1192,86 @@ fn substitute_runtime_text(
                                           ).unwrap_or(""),
                                         )
                                       None =>
-                                        match vars_expr_name(expression) {
+                                        match
+                                          dispatch_inputs_expr_name(expression) {
                                           Some(name) =>
                                             chunks.push(
                                               map_get_case_insensitive(
-                                                vars_context, name,
+                                                dispatch_inputs, name,
                                               ).unwrap_or(""),
                                             )
                                           None =>
-                                            match
-                                              secrets_expr_name(expression) {
+                                            match vars_expr_name(expression) {
                                               Some(name) =>
                                                 chunks.push(
                                                   map_get_case_insensitive(
-                                                    secrets_context, name,
+                                                    vars_context, name,
                                                   ).unwrap_or(""),
                                                 )
                                               None =>
                                                 match
-                                                  github_expr_name(expression) {
+                                                  secrets_expr_name(expression) {
                                                   Some(name) =>
                                                     chunks.push(
                                                       map_get_case_insensitive(
-                                                        github_context, name,
+                                                        secrets_context, name,
                                                       ).unwrap_or(""),
                                                     )
                                                   None =>
                                                     match
-                                                      runner_expr_name(
+                                                      github_expr_name(
                                                         expression,
                                                       ) {
                                                       Some(name) =>
                                                         chunks.push(
                                                           map_get_case_insensitive(
-                                                            runner_context, name,
+                                                            github_context, name,
                                                           ).unwrap_or(""),
                                                         )
                                                       None =>
                                                         match
-                                                          evaluate_string_function_expression(
+                                                          runner_expr_name(
                                                             expression,
-                                                            new_if_condition_context(
-                                                              step_outputs=state.step_outputs,
-                                                              step_outcomes=state.step_outcomes,
-                                                              step_conclusions=state.step_conclusions,
-                                                              workspace_root~,
-                                                              env_context~,
-                                                              job_context~,
-                                                              vars_context~,
-                                                              secrets_context~,
-                                                              github_context~,
-                                                              runner_context~,
-                                                              needs_outputs~,
-                                                              needs_results~,
-                                                            ),
                                                           ) {
-                                                          Some(value) =>
-                                                            chunks.push(value)
-                                                          None =>
+                                                          Some(name) =>
                                                             chunks.push(
-                                                              exec_text_slice(
-                                                                text,
-                                                                open_idx,
-                                                                close_idx + 2,
-                                                              ),
+                                                              map_get_case_insensitive(
+                                                                runner_context, name,
+                                                              ).unwrap_or(""),
                                                             )
+                                                          None =>
+                                                            match
+                                                              evaluate_string_function_expression(
+                                                                expression,
+                                                                new_if_condition_context(
+                                                                  step_outputs=state.step_outputs,
+                                                                  step_outcomes=state.step_outcomes,
+                                                                  step_conclusions=state.step_conclusions,
+                                                                  workspace_root~,
+                                                                  env_context~,
+                                                                  job_context~,
+                                                                  vars_context~,
+                                                                  secrets_context~,
+                                                                  github_context~,
+                                                                  runner_context~,
+                                                                  needs_outputs~,
+                                                                  needs_results~,
+                                                                ),
+                                                              ) {
+                                                              Some(value) =>
+                                                                chunks.push(
+                                                                  value,
+                                                                )
+                                                              None =>
+                                                                chunks.push(
+                                                                  exec_text_slice(
+                                                                    text,
+                                                                    open_idx,
+                                                                    close_idx +
+                                                                    2,
+                                                                  ),
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -1284,13 +1312,22 @@ fn substitute_runtime_optional(
   runner_context : Map[String, String],
   needs_outputs : Map[String, Map[String, String]],
   needs_results : Map[String, String],
+  dispatch_inputs? : Map[String, String] = {},
 ) -> String? {
   match value {
     Some(text) =>
       Some(
         substitute_runtime_text(
-          text, state, workspace_root, env_context, job_context, github_context,
-          runner_context, needs_outputs, needs_results,
+          text,
+          state,
+          workspace_root,
+          env_context,
+          job_context,
+          github_context,
+          runner_context,
+          needs_outputs,
+          needs_results,
+          dispatch_inputs~,
         ),
       )
     None => None
@@ -5750,6 +5787,7 @@ async fn execute_task_plan_native(
   push_event : PushEvent?,
   job_containers : Map[String, JobContainerSpec],
   job_services : Map[String, Map[String, JobContainerSpec]],
+  dispatch_inputs~ : Map[String, String],
 ) -> TaskExecutionResult {
   if plan.kind == "barrier" {
     return {
@@ -5801,6 +5839,7 @@ async fn execute_task_plan_native(
     runner_ctx,
     needs_outputs,
     needs_results,
+    dispatch_inputs~,
   )
   let resolved_shell = substitute_runtime_optional(
     Some(plan.shell),
@@ -5812,6 +5851,7 @@ async fn execute_task_plan_native(
     runner_ctx,
     needs_outputs,
     needs_results,
+    dispatch_inputs~,
   ).unwrap_or(plan.shell)
   let resolved_working_directory = substitute_runtime_optional(
     Some(plan.working_directory),
@@ -5823,6 +5863,7 @@ async fn execute_task_plan_native(
     runner_ctx,
     needs_outputs,
     needs_results,
+    dispatch_inputs~,
   ).unwrap_or(plan.working_directory)
   let unsupported_command = unsupported_workflow_command(plan, resolved_script)
   guard unsupported_command is None else {
@@ -5909,6 +5950,7 @@ pub async fn execute_lowered_native(
   lowered : LoweringResult,
   workspace_root? : String = ".",
   push_event? : PushEvent? = None,
+  dispatch_inputs? : Map[String, String] = {},
 ) -> WorkflowRunReport {
   let issues = lowered_issues(lowered)
   if issues.length() > 0 {
@@ -6303,6 +6345,7 @@ pub async fn execute_lowered_native(
                 push_event,
                 lowered.plan.job_containers,
                 lowered.plan.job_services,
+                dispatch_inputs~,
               )
               let report = result.report
               reports.push(report)
@@ -6550,9 +6593,11 @@ pub async fn execute_lowered_native(
   lowered : LoweringResult,
   workspace_root? : String = ".",
   push_event? : PushEvent? = None,
+  dispatch_inputs? : Map[String, String] = {},
 ) -> WorkflowRunReport {
   ignore(lowered)
   ignore(workspace_root)
   ignore(push_event)
+  ignore(dispatch_inputs)
   make_invalid_report(["native executor is only available on native target"])
 }
