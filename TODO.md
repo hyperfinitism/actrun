@@ -129,7 +129,7 @@ The approach has two stages:
 - [ ] `actions/cache`
   - [x] `enableCrossOsArchive` (no-op locally)
   - [ ] cache version semantics
-  - [ ] `save-always` (save cache even on step failure)
+  - [x] `save-always` (save cache even on step failure)
   - [ ] cache eviction (7-day unused cleanup, size limits)
   - [x] path list normalization (`~` expansion, trim)
   - [x] Post-save edge case on failure/cancel (correctly skips post on always() + cancel)
@@ -167,7 +167,7 @@ The approach has two stages:
   - [x] Service log capture and run store persistence (fetch `docker logs` during cleanup)
   - [x] Security test confirming `docker login` credentials do not appear in plaintext in argv / stderr / run store (`--password-stdin` + mask_secrets)
   - [ ] Alternative container runtimes: Podman, Lima, Apple Containers (`container` framework)
-  - [ ] `ACTRUN_CONTAINER_RUNTIME` env var to select runtime (default: `docker`)
+  - [x] `ACTRUN_CONTAINER_RUNTIME` env var to select runtime (default: `docker`)
 - [ ] Shell / host differences
   - [ ] `pwsh` execution environment differences (only works when pwsh is available on the system)
   - [x] Expanded shell template compatibility fixtures (bash/sh/custom template E2E)

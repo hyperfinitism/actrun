@@ -4808,6 +4808,9 @@ fn execute_cache_action_native(
   let fail_on_cache_miss = parse_cache_fail_on_cache_miss(
     resolved_plan_env.get("INPUT_FAIL_ON_CACHE_MISS").unwrap_or(""),
   )
+  let save_always = parse_cache_lookup_only(
+    resolved_plan_env.get("INPUT_SAVE_ALWAYS").unwrap_or("false"),
+  )
   let path_input = resolved_plan_env.get("INPUT_PATH").unwrap_or("")
   if key.length() == 0 {
     return cache_input_result_failure(plan, workspace_root, "cache", true)
@@ -4860,6 +4863,11 @@ fn execute_cache_action_native(
       "CACHE_KEY": key,
       "CACHE_PATH": path_input,
       "CACHE_HIT": cache_hit,
+      "CACHE_SAVE_ALWAYS": if save_always {
+        "true"
+      } else {
+        ""
+      },
     },
   }
 }
@@ -4873,11 +4881,14 @@ fn execute_cache_post_save_native(
   state : JobRuntimeState,
 ) -> TaskRunReport {
   let saved_state = action_scope_state(state, plan.action_scope)
-  if saved_state.get("CACHE_SKIP_POST").unwrap_or("") == "true" {
-    return task_report_success(plan, workspace_root)
-  }
-  if saved_state.get("CACHE_HIT").unwrap_or("") == "true" {
-    return task_report_success(plan, workspace_root)
+  let save_always = saved_state.get("CACHE_SAVE_ALWAYS").unwrap_or("") == "true"
+  if not(save_always) {
+    if saved_state.get("CACHE_SKIP_POST").unwrap_or("") == "true" {
+      return task_report_success(plan, workspace_root)
+    }
+    if saved_state.get("CACHE_HIT").unwrap_or("") == "true" {
+      return task_report_success(plan, workspace_root)
+    }
   }
   let key = saved_state
     .get("CACHE_KEY")
@@ -4932,9 +4943,15 @@ fn configured_exec_bin(
   resolved_plan_env : Map[String, String],
   fallback : String,
 ) -> String {
+  // ACTRUN_CONTAINER_RUNTIME overrides ACTRUN_DOCKER_BIN
+  let effective_fallback = if env_name == "ACTRUN_DOCKER_BIN" {
+    @xsys.get_env_var("ACTRUN_CONTAINER_RUNTIME").unwrap_or(fallback)
+  } else {
+    fallback
+  }
   let configured = resolved_plan_env
     .get(env_name)
-    .unwrap_or(@xsys.get_env_var(env_name).unwrap_or(fallback))
+    .unwrap_or(@xsys.get_env_var(env_name).unwrap_or(effective_fallback))
   if configured.contains("/") {
     absolute_exec_path(configured)
   } else {
