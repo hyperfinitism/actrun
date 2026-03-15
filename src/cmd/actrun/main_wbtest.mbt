@@ -1519,3 +1519,39 @@ test "cli: parse --retry flag" {
   inspect(options.retry, content="true")
   inspect(options.affected, content="false")
 }
+
+///|
+test "cli: parse --job and --step flags" {
+  let result = parse_cli_args([
+    "actrun", "ci.yml", "--job", "build", "--step", "test",
+  ])
+  let options = expect_cli_options(result)
+  inspect(options.job_filter, content="build")
+  inspect(options.step_filter, content="test")
+}
+
+///|
+test "cli: parse --trigger flag" {
+  let result = parse_cli_args(["actrun", "ci.yml", "--trigger", "schedule"])
+  let options = expect_cli_options(result)
+  inspect(options.trigger, content="schedule")
+}
+
+///|
+test "extract_cron_schedules: basic" {
+  let yaml = "on:\n  schedule:\n    - cron: '0 2 * * *'\n    - cron: '30 5 * * 1'\njobs:\n"
+  let schedules = extract_cron_schedules(yaml)
+  inspect(
+    schedules,
+    content=(
+      #|["0 2 * * *", "30 5 * * 1"]
+    ),
+  )
+}
+
+///|
+test "extract_cron_schedules: no schedule" {
+  let yaml = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+  let schedules = extract_cron_schedules(yaml)
+  inspect(schedules, content="[]")
+}

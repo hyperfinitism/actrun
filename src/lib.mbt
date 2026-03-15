@@ -440,6 +440,50 @@ pub fn filter_workflow_jobs(
 }
 
 ///|
+pub fn select_workflow_job(
+  workflow : WorkflowSpec,
+  job_id : String,
+) -> WorkflowSpec {
+  if job_id.length() == 0 {
+    return workflow
+  }
+  let filtered_jobs : Array[JobSpec] = []
+  for job in workflow.jobs {
+    if job.id == job_id {
+      filtered_jobs.push(job)
+    }
+  }
+  { ..workflow, jobs: filtered_jobs }
+}
+
+///|
+pub fn select_workflow_step(
+  workflow : WorkflowSpec,
+  job_id : String,
+  step_id : String,
+) -> WorkflowSpec {
+  if step_id.length() == 0 {
+    return workflow
+  }
+  let filtered_jobs : Array[JobSpec] = []
+  for job in workflow.jobs {
+    if job_id.length() > 0 && job.id != job_id {
+      continue
+    }
+    let filtered_steps : Array[StepSpec] = []
+    for step in job.steps {
+      if step.id == step_id || step.name == step_id {
+        filtered_steps.push(step)
+      }
+    }
+    if filtered_steps.length() > 0 {
+      filtered_jobs.push({ ..job, steps: filtered_steps })
+    }
+  }
+  { ..workflow, jobs: filtered_jobs }
+}
+
+///|
 pub fn new_workflow(
   name : String,
   jobs : Array[JobSpec],

@@ -25,6 +25,9 @@ struct CliOptions {
   container_runtime : String
   affected : Bool
   retry : Bool
+  job_filter : String
+  step_filter : String
+  trigger : String
 }
 
 ///|
@@ -184,6 +187,7 @@ fn usage_text() -> String {
   "\n" +
   "Other commands:\n" +
   "  list [patterns...]           List workflows and their run commands\n" +
+  "  cron [show|install|uninstall] Manage cron schedules from workflows\n" +
   "  init                         Create actrun.toml config file\n" +
   "  doctor                       Check tool dependencies\n" +
   "\n" +
@@ -212,6 +216,9 @@ fn usage_text() -> String {
   "  --container-runtime <name>   Container runtime: docker, podman, container, lima, nerdctl\n" +
   "  --affected                   Only run if files matching actrun.toml patterns changed\n" +
   "  --retry                      Re-run only failed jobs from the latest run\n" +
+  "  --job <id>                   Run only the specified job\n" +
+  "  --step <id>                  Run only the specified step (use with --job)\n" +
+  "  --trigger <event>            Force trigger type: push, pull_request, schedule, workflow_dispatch\n" +
   "\n" +
   "Storage flags:\n" +
   "  --artifact-root <path>       Artifact storage root\n" +
@@ -1746,6 +1753,9 @@ fn merge_config_into_options(
     },
     affected: options.affected,
     retry: options.retry,
+    job_filter: options.job_filter,
+    step_filter: options.step_filter,
+    trigger: options.trigger,
   }
 }
 
@@ -2220,6 +2230,198 @@ fn handle_list_command(args : Array[String]) -> Int {
 }
 
 ///|
+/// Extract cron schedule expressions from workflow YAML text
+fn extract_cron_schedules(text : String) -> Array[String] {
+  let schedules : Array[String] = []
+  let mut in_schedule = false
+  for part in text.split("\n") {
+    let line = part.to_string().trim(chars=" \t\r\n").to_string()
+    if line == "schedule:" {
+      in_schedule = true
+      continue
+    }
+    if in_schedule {
+      if line.has_prefix("- cron:") {
+        let cron_part = String::unsafe_substring(
+            line,
+            start=7,
+            end=line.length(),
+          )
+          .trim(chars=" \t\"'")
+          .to_string()
+        if cron_part.length() > 0 {
+          schedules.push(cron_part)
+        }
+      } else if line.length() > 0 &&
+        not(line.has_prefix("-")) &&
+        not(line.has_prefix("#")) {
+        in_schedule = false
+      }
+    }
+  }
+  schedules
+}
+
+///|
+async fn handle_cron_command(args : Array[String]) -> Int {
+  let config = load_actrun_config(".")
+  let mut action = "show"
+  if args.length() > 2 {
+    action = args[2]
+  }
+  if action != "show" && action != "install" && action != "uninstall" {
+    print_errors(["unknown cron subcommand: " + action])
+    return 1
+  }
+  // Collect workflow patterns
+  let patterns : Array[String] = []
+  for inc in config.includes {
+    patterns.push(inc)
+  }
+  if patterns.length() == 0 {
+    patterns.push(".github/workflows/*.yml")
+    patterns.push(".github/workflows/*.yaml")
+  }
+  let records = try collect_list_workflows(patterns) catch {
+    _ => return 1
+  } noraise {
+    value => value
+  }
+  // Find workflows with schedule triggers
+  let cron_entries : Array[(String, String, String)] = []
+  for record in records {
+    let text = match read_text(record.path) {
+      Some(t) => t
+      None => continue
+    }
+    let schedules = extract_cron_schedules(text)
+    for cron_expr in schedules {
+      cron_entries.push((record.name, record.path, cron_expr))
+    }
+  }
+  if cron_entries.length() == 0 {
+    println("No schedule triggers found in workflows.")
+    return 0
+  }
+  let cwd = @env.current_dir().unwrap_or(
+    @xsys.get_env_var("PWD").unwrap_or("."),
+  )
+  let actrun_bin = @xsys.get_cli_args()[0]
+  if action == "show" {
+    println("# actrun cron entries")
+    for entry in cron_entries {
+      let (name, path, cron_expr) = entry
+      println("# " + name + " (" + path + ")")
+      println(
+        cron_expr +
+        " cd " +
+        cwd +
+        " && " +
+        actrun_bin +
+        " " +
+        path +
+        " --trigger schedule --trust",
+      )
+      println("")
+    }
+  } else if action == "install" {
+    let lines : Array[String] = []
+    // Read existing crontab
+    let (code, stdout, _) = @process.collect_output("crontab", ["-l"], cwd=".")
+    if code == 0 {
+      for line_view in stdout.text().split("\n") {
+        let line = line_view.to_string()
+        if not(line.contains("# actrun:")) {
+          lines.push(line)
+        }
+      }
+    }
+    // Add actrun entries
+    for entry in cron_entries {
+      let (name, path, cron_expr) = entry
+      lines.push(
+        cron_expr +
+        " cd " +
+        cwd +
+        " && " +
+        actrun_bin +
+        " " +
+        path +
+        " --trigger schedule --trust # actrun:" +
+        name,
+      )
+    }
+    let crontab_text = lines.join("\n") + "\n"
+    let tmp_path = "/tmp/actrun-crontab-" + @env.now().to_string()
+    try @xfs.write_string_to_file(tmp_path, crontab_text) catch {
+      _ => {
+        print_errors(["failed to write temp crontab file"])
+        return 1
+      }
+    } noraise {
+      _ => ()
+    }
+    let (install_code, _, install_err) = @process.collect_output(
+      "crontab",
+      [tmp_path],
+      cwd=".",
+    )
+    ignore(@process.collect_output("rm", ["-f", tmp_path], cwd="."))
+    if install_code != 0 {
+      print_errors([install_err.text().trim(chars=" \t\r\n").to_string()])
+      return 1
+    }
+    println("Installed " + cron_entries.length().to_string() + " cron entries")
+    for entry in cron_entries {
+      let (name, path, cron_expr) = entry
+      println("  " + cron_expr + "  " + name + " (" + path + ")")
+    }
+  } else if action == "uninstall" {
+    let (code, stdout, _) = @process.collect_output("crontab", ["-l"], cwd=".")
+    if code != 0 {
+      println("No crontab found")
+      return 0
+    }
+    let lines : Array[String] = []
+    let mut removed = 0
+    for line_view in stdout.text().split("\n") {
+      let line = line_view.to_string()
+      if line.contains("# actrun:") {
+        removed += 1
+      } else {
+        lines.push(line)
+      }
+    }
+    if removed == 0 {
+      println("No actrun cron entries found")
+      return 0
+    }
+    let crontab_text = lines.join("\n")
+    let tmp_path = "/tmp/actrun-crontab-" + @env.now().to_string()
+    try @xfs.write_string_to_file(tmp_path, crontab_text) catch {
+      _ => {
+        print_errors(["failed to write temp crontab file"])
+        return 1
+      }
+    } noraise {
+      _ => ()
+    }
+    let (install_code, _, install_err) = @process.collect_output(
+      "crontab",
+      [tmp_path],
+      cwd=".",
+    )
+    ignore(@process.collect_output("rm", ["-f", tmp_path], cwd="."))
+    if install_code != 0 {
+      print_errors([install_err.text().trim(chars=" \t\r\n").to_string()])
+      return 1
+    }
+    println("Removed " + removed.to_string() + " actrun cron entries")
+  }
+  0
+}
+
+///|
 struct DotenvParseResult {
   entries : Map[String, String]
   errors : Array[String]
@@ -2550,6 +2752,9 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
   let mut container_runtime = ""
   let mut affected = false
   let mut retry = false
+  let mut job_filter = ""
+  let mut step_filter = ""
+  let mut trigger = ""
   let mut index = 1
 
   while index < args.length() {
@@ -2618,7 +2823,10 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
       arg == "--input" ||
       arg == "--env" ||
       arg == "--nix-packages" ||
-      arg == "--container-runtime" {
+      arg == "--container-runtime" ||
+      arg == "--job" ||
+      arg == "--step" ||
+      arg == "--trigger" {
       if index + 1 >= args.length() {
         errors.push("missing value for " + arg)
         break
@@ -2680,6 +2888,12 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
         }
       } else if arg == "--container-runtime" {
         container_runtime = value
+      } else if arg == "--job" {
+        job_filter = value
+      } else if arg == "--step" {
+        step_filter = value
+      } else if arg == "--trigger" {
+        trigger = value
       } else {
         changed_paths.push(value)
       }
@@ -2742,6 +2956,9 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
       container_runtime,
       affected,
       retry,
+      job_filter,
+      step_filter,
+      trigger,
     }),
     errors,
   }
@@ -4685,7 +4902,12 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
     return 1
   }
 
-  if should_check_trigger(options) &&
+  // --trigger: skip trigger matching when explicitly specified
+  if options.trigger.length() > 0 {
+    println("trigger: using " + options.trigger + " (trigger matching skipped)")
+  }
+  if options.trigger.length() == 0 &&
+    should_check_trigger(options) &&
     not(@ar.matches_push_trigger(workflow.trigger, trigger_event)) {
     let skipped_run_dir = persist_run_record(run_root, {
       run_id: "",
@@ -4893,23 +5115,57 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
     effective_workflow, retry_skip_jobs,
   )
 
+  // --job / --step: select specific job and/or step
+  let filtered_workflow = if options.job_filter.length() > 0 ||
+    options.step_filter.length() > 0 {
+    let job_selected = @ar.select_workflow_job(
+      retry_workflow,
+      options.job_filter,
+    )
+    let step_selected = @ar.select_workflow_step(
+      job_selected,
+      options.job_filter,
+      options.step_filter,
+    )
+    if step_selected.jobs.length() == 0 {
+      let target = if options.step_filter.length() > 0 {
+        options.job_filter + "/" + options.step_filter
+      } else {
+        options.job_filter
+      }
+      print_errors(["no matching job/step found: " + target])
+      return 1
+    }
+    for job in step_selected.jobs {
+      let steps_desc : Array[String] = []
+      for step in job.steps {
+        let label = if step.name.length() > 0 { step.name } else { step.id }
+        steps_desc.push(label)
+      }
+      println("run   " + job.id + ": " + steps_desc.join(", "))
+    }
+    step_selected
+  } else {
+    retry_workflow
+  }
+
   if options.dry_run {
     let lowered = @ar.lower_push_workflow_in_workspace(
-      retry_workflow, execution_root,
+      filtered_workflow, execution_root,
     )
     if lowered.errors.length() > 0 {
       for err in lowered.errors {
         println("warning: " + err)
       }
     }
-    print_dry_run_plan(retry_workflow, lowered)
+    print_dry_run_plan(filtered_workflow, lowered)
     return 0
   }
 
   // Check for third-party actions and prompt for confirmation
   let trust_env = @xsys.get_env_var("ACTRUN_TRUST").unwrap_or("") == "true"
   if not(options.trust_actions) && not(trust_env) && not(options.dry_run) {
-    let third_party = collect_third_party_actions(retry_workflow)
+    let third_party = collect_third_party_actions(filtered_workflow)
     if third_party.length() > 0 {
       println("The following third-party actions will be fetched and executed:")
       for action_ref in third_party {
@@ -4927,7 +5183,7 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
     }
   }
   let prefetch = @ar.prefetch_workflow_github_actions_native(
-    retry_workflow, execution_root,
+    filtered_workflow, execution_root,
   )
   if prefetch.errors.length() > 0 {
     print_errors(prefetch.errors)
@@ -4935,7 +5191,7 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
   }
 
   let lowered = @ar.lower_push_workflow_in_workspace(
-    retry_workflow, execution_root,
+    filtered_workflow, execution_root,
   )
   if lowered.errors.length() > 0 {
     print_errors(lowered.errors)
@@ -5021,6 +5277,13 @@ async fn main {
   }
   if cli_args.length() > 1 && cli_args[1] == "list" {
     let exit_code = handle_list_command(cli_args)
+    if exit_code != 0 {
+      @xsys.exit(exit_code)
+    }
+    return
+  }
+  if cli_args.length() > 1 && cli_args[1] == "cron" {
+    let exit_code = handle_cron_command(cli_args)
     if exit_code != 0 {
       @xsys.exit(exit_code)
     }

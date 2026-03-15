@@ -97,6 +97,10 @@ pub fn resolve_action_ref(ActionRef) -> ActionResolutionResult
 
 pub fn resolve_action_uses(String) -> ActionResolutionResult
 
+pub fn select_workflow_job(WorkflowSpec, String) -> WorkflowSpec
+
+pub fn select_workflow_step(WorkflowSpec, String, String) -> WorkflowSpec
+
 pub fn step_matches_skip_pattern(StepSpec, Array[String]) -> Bool
 
 pub fn strip_unsupported_workflow_fields(WorkflowSpec) -> WorkflowSpec

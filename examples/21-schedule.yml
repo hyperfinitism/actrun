@@ -1,0 +1,15 @@
+name: scheduled-task
+on:
+  schedule:
+    - cron: '0 2 * * *'
+    - cron: '0 14 * * 1-5'
+  push:
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "nightly task"
+  weekday:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "weekday task"
