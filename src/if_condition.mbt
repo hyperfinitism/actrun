@@ -517,6 +517,28 @@ fn if_expression_function_supported(text : String) -> Bool {
   if if_hash_files_function_supported(text) {
     return true
   }
+  match if_function_arguments_at_least(text, "format", 1) {
+    Some(args) => {
+      for arg in args {
+        if not(if_condition_supported(arg)) {
+          return false
+        }
+      }
+      return true
+    }
+    None => ()
+  }
+  match if_function_arguments_at_least(text, "join", 1) {
+    Some(args) => {
+      for arg in args {
+        if not(if_condition_supported(arg)) {
+          return false
+        }
+      }
+      return true
+    }
+    None => ()
+  }
   false
 }
 
@@ -771,6 +793,70 @@ fn if_expression_function_value(
   }
   match if_hash_files_function_value(text, ctx) {
     Some(value) => return Some(value)
+    None => ()
+  }
+  match if_function_arguments_at_least(text, "format", 1) {
+    Some(args) => {
+      let fmt_str = if_condition_value_to_string(
+        if_condition_atom_value(args[0], ctx),
+      )
+      let mut result = fmt_str
+      let mut i = 1
+      while i < args.length() {
+        let placeholder = "{" + (i - 1).to_string() + "}"
+        let replacement = if_condition_value_to_string(
+          if_condition_atom_value(args[i], ctx),
+        )
+        let mut new_result = ""
+        let mut search_from = 0
+        while true {
+          match find_if_substring(result, placeholder, search_from) {
+            Some(pos) => {
+              new_result = new_result +
+                if_text_slice(result, search_from, pos) +
+                replacement
+              search_from = pos + placeholder.length()
+            }
+            None => {
+              new_result = new_result +
+                if_text_slice(result, search_from, result.length())
+              break
+            }
+          }
+        }
+        result = new_result
+        i += 1
+      }
+      return Some(if_condition_value_from_json(Json::string(result)))
+    }
+    None => ()
+  }
+  match if_function_arguments_at_least(text, "join", 1) {
+    Some(args) => {
+      let value = if_condition_atom_value(args[0], ctx)
+      let separator = if args.length() >= 2 {
+        if_condition_value_to_string(if_condition_atom_value(args[1], ctx))
+      } else {
+        ","
+      }
+      match if_condition_value_json(value) {
+        Array(items) => {
+          let parts : Array[String] = []
+          for item in items {
+            parts.push(
+              if_condition_value_to_string(if_condition_value_from_json(item)),
+            )
+          }
+          return Some(
+            if_condition_value_from_json(Json::string(parts.join(separator))),
+          )
+        }
+        _ => {
+          let str_val = if_condition_value_to_string(value)
+          return Some(if_condition_value_from_json(Json::string(str_val)))
+        }
+      }
+    }
     None => ()
   }
   None

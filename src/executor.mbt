@@ -983,6 +983,14 @@ fn github_context(
     "action_path": github_action_path_value(plan),
     "action_repository": github_action_repository(plan),
     "action_ref": github_action_ref_value(plan),
+    "token": @xsys.get_env_var("ACTRUN_SECRET_GITHUB_TOKEN").unwrap_or(""),
+    "server_url": @xsys.get_env_var("ACTRUN_GITHUB_BASE_URL").unwrap_or(
+      "https://github.com",
+    ),
+    "api_url": "https://api.github.com",
+    "graphql_url": "https://api.github.com/graphql",
+    "run_id": "",
+    "run_number": "",
   }
 }
 
@@ -5752,6 +5760,16 @@ fn default_runner_env(
     "RUNNER_ENVIRONMENT": runner_context.get("environment").unwrap_or(""),
     "RUNNER_OS": runner_context.get("os").unwrap_or(""),
     "RUNNER_TEMP": runner_context.get("temp").unwrap_or(""),
+    "GITHUB_TOKEN": github_context.get("token").unwrap_or(""),
+    "GITHUB_SERVER_URL": github_context
+    .get("server_url")
+    .unwrap_or("https://github.com"),
+    "GITHUB_API_URL": github_context
+    .get("api_url")
+    .unwrap_or("https://api.github.com"),
+    "GITHUB_GRAPHQL_URL": github_context
+    .get("graphql_url")
+    .unwrap_or("https://api.github.com/graphql"),
     "ACTRUN_LOCAL": "true",
   }
   match github_context.get("action_path") {

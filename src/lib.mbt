@@ -610,9 +610,19 @@ fn strip_add_mask_lines(text : String) -> String {
   let lines : Array[String] = []
   for line_view in text.split("\n") {
     let trimmed = line_view.trim(chars=" \t\r")
-    if not(trimmed.has_prefix("::add-mask::")) {
-      lines.push(line_view.to_string())
+    if trimmed.has_prefix("::add-mask::") {
+      continue
     }
+    if trimmed.has_prefix("::group::") {
+      continue
+    }
+    if trimmed.has_prefix("::endgroup::") {
+      continue
+    }
+    if trimmed.has_prefix("::debug::") {
+      continue
+    }
+    lines.push(line_view.to_string())
   }
   lines.join("\n")
 }
@@ -667,7 +677,16 @@ pub fn mask_report_secrets(
     all_secrets.push(value)
   }
   if all_secrets.length() == 0 {
-    return report
+    // Still strip workflow command lines even without secrets
+    let stripped_tasks : Array[TaskRunReport] = []
+    for task in report.task_reports {
+      stripped_tasks.push({
+        ..task,
+        stdout: strip_add_mask_lines(task.stdout),
+        stderr: strip_add_mask_lines(task.stderr),
+      })
+    }
+    return { ..report, task_reports: stripped_tasks }
   }
   let masked_tasks : Array[TaskRunReport] = []
   for task in report.task_reports {
