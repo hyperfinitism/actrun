@@ -753,6 +753,8 @@ async test "cli: persist run record stores task logs and summaries" {
     cache_root: Some(cache_root_abs),
     key_filter: "",
     workspace_key_filter: "",
+    max_age_days: 0,
+    prune_all: false,
     json_output: true,
   })
   inspect(cache_list_exit, content="0")
@@ -761,6 +763,8 @@ async test "cli: persist run record stores task logs and summaries" {
     cache_root: Some(cache_root_abs),
     key_filter: "run-store-basic-key",
     workspace_key_filter: workspace_key,
+    max_age_days: 0,
+    prune_all: false,
     json_output: false,
   })
   inspect(cache_prune_exit, content="0")

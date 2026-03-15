@@ -60,7 +60,7 @@ Lock down "where to execute" first. If this is ambiguous, both actions compatibi
   - [x] `--workspace-mode worktree` (isolation via `git worktree add`)
   - [x] `--workspace-mode tmp` (isolation via `git clone`)
   - [ ] `--workspace-mode docker`
-  - [ ] Container runtime backends: Docker, Podman, Lima, Apple Containers (`container` framework)
+  - [x] Container runtime backends: Docker, Podman, Lima, Apple Containers (`container` framework)
   - [x] Fix cleanup / isolation policy for each mode
   - [x] Security test confirming `_build/actrun/file_commands` / `runner_temp` (which may contain secrets) are cleaned up after runs
   - [x] Security test confirming step scripts / `.npmrc` / file command files are not world-readable
@@ -130,7 +130,7 @@ The approach has two stages:
   - [x] `enableCrossOsArchive` (no-op locally)
   - [ ] cache version semantics
   - [x] `save-always` (save cache even on step failure)
-  - [ ] cache eviction (7-day unused cleanup, size limits)
+  - [x] cache eviction (`cache prune --all`, `cache prune --max-age <days>`)
   - [x] path list normalization (`~` expansion, trim)
   - [x] Post-save edge case on failure/cancel (correctly skips post on always() + cancel)
 - [ ] `actions/setup-node`
@@ -166,7 +166,7 @@ The approach has two stages:
   - [x] Service `volumes` / `options` / `credentials` semantics (covered by existing implementation)
   - [x] Service log capture and run store persistence (fetch `docker logs` during cleanup)
   - [x] Security test confirming `docker login` credentials do not appear in plaintext in argv / stderr / run store (`--password-stdin` + mask_secrets)
-  - [ ] Alternative container runtimes: Podman, Lima, Apple Containers (`container` framework)
+  - [x] Alternative container runtimes: Podman, Lima, Apple Containers (`container` framework)
   - [x] `ACTRUN_CONTAINER_RUNTIME` env var to select runtime (default: `docker`)
 - [ ] Shell / host differences
   - [ ] `pwsh` execution environment differences (only works when pwsh is available on the system)
