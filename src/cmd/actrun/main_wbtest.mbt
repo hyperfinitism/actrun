@@ -1284,6 +1284,7 @@ test "config: merge cli overrides config" {
     nix_packages: ["python312"],
     container_runtime: "podman",
     affected: {},
+    includes: [],
   }
   let cli = parse_cli_args(["actrun", "ci.yml", "--local", "--no-nix"])
   let options = expect_cli_options(cli)
@@ -1312,6 +1313,7 @@ test "config: cli skip_actions overrides local_skip_actions" {
     nix_packages: [],
     container_runtime: "",
     affected: {},
+    includes: [],
   }
   let cli = parse_cli_args([
     "actrun", "ci.yml", "--skip-action", "actions/setup-node",
@@ -1354,6 +1356,7 @@ test "config: container_runtime from config" {
     nix_packages: [],
     container_runtime: "podman",
     affected: {},
+    includes: [],
   }
   let cli = parse_cli_args(["actrun", "ci.yml"])
   let options = expect_cli_options(cli)
@@ -1371,6 +1374,7 @@ test "config: cli container_runtime overrides config" {
     nix_packages: [],
     container_runtime: "docker",
     affected: {},
+    includes: [],
   }
   let cli = parse_cli_args(["actrun", "ci.yml", "--container-runtime", "lima"])
   let options = expect_cli_options(cli)
@@ -1480,6 +1484,24 @@ test "files_match_patterns: matches at least one" {
     files_match_patterns(["README.md", "docs/guide.md"], ["src/**"]),
     content="false",
   )
+}
+
+///|
+test "glob_match: dir/*.ext patterns" {
+  inspect(
+    glob_match(".github/workflows/*.yml", ".github/workflows/ci.yml"),
+    content="true",
+  )
+  inspect(
+    glob_match(".github/workflows/*.yml", ".github/workflows/lint.yaml"),
+    content="false",
+  )
+  inspect(
+    glob_match(".github/workflows/*.yml", ".github/workflows/sub/ci.yml"),
+    content="false",
+  )
+  inspect(glob_match("ci/*.yaml", "ci/test.yaml"), content="true")
+  inspect(glob_match("ci/*.yaml", "ci/test.yml"), content="false")
 }
 
 ///|

@@ -183,6 +183,7 @@ fn usage_text() -> String {
   "  cache prune                  Delete cache entries\n" +
   "\n" +
   "Other commands:\n" +
+  "  list [patterns...]           List workflows and their run commands\n" +
   "  init                         Create actrun.toml config file\n" +
   "  doctor                       Check tool dependencies\n" +
   "\n" +
@@ -1430,6 +1431,7 @@ struct ActrunConfig {
   nix_packages : Array[String]
   container_runtime : String
   affected : Map[String, Array[String]]
+  includes : Array[String]
 }
 
 ///|
@@ -1442,6 +1444,7 @@ fn default_actrun_config() -> ActrunConfig {
     nix_packages: [],
     container_runtime: "",
     affected: {},
+    includes: [],
   }
 }
 
@@ -1523,6 +1526,9 @@ async fn generate_actrun_config() -> String {
       "# Container runtime: docker, podman, container, lima, nerdctl\n"
     config = config + "# container_runtime = \"docker\"\n"
   }
+  config = config + "\n# Additional workflow file patterns for `actrun list`\n"
+  config = config +
+    "# includes = [\".github/workflows/*.yml\", \"ci/**/*.yaml\"]\n"
   config
 }
 
@@ -1605,7 +1611,7 @@ fn parse_toml_minimal(content : String) -> TomlParseResult {
 ///|
 let known_config_keys : Array[String] = [
   "workspace_mode", "local_skip_actions", "trust_actions", "nix_mode", "nix_packages",
-  "container_runtime",
+  "container_runtime", "includes",
 ]
 
 ///|
@@ -1681,6 +1687,7 @@ fn load_actrun_config(dir : String) -> ActrunConfig {
       }
       result
     },
+    includes: parsed.arrays.get("includes").unwrap_or([]),
   }
 }
 
@@ -1915,6 +1922,41 @@ fn glob_match(pattern : String, path : String) -> Bool {
     )
     return not(rest.contains("/"))
   }
+  // "dir/*.ext" → path starts with "dir/" and ends with ".ext", no subdirs
+  if pattern.contains("/*") {
+    match pattern.find("/*") {
+      Some(star_idx) => {
+        let dir_prefix = String::unsafe_substring(
+            pattern,
+            start=0,
+            end=star_idx,
+          ) +
+          "/"
+        let ext_part = String::unsafe_substring(
+          pattern,
+          start=star_idx + 2,
+          end=pattern.length(),
+        )
+        if not(path.has_prefix(dir_prefix)) {
+          return false
+        }
+        let rest = String::unsafe_substring(
+          path,
+          start=dir_prefix.length(),
+          end=path.length(),
+        )
+        if rest.contains("/") {
+          return false
+        }
+        return if ext_part.length() > 0 {
+          rest.has_suffix(ext_part)
+        } else {
+          true
+        }
+      }
+      None => ()
+    }
+  }
   path == pattern || path.has_prefix(pattern + "/")
 }
 
@@ -2030,6 +2072,150 @@ async fn handle_init_command() -> Int {
     _ => ()
   }
   println("Created actrun.toml")
+  0
+}
+
+///|
+/// Recursively scan a directory for .yml/.yaml files
+fn scan_yaml_files(dir : String, prefix : String) -> Array[String] raise {
+  let results : Array[String] = []
+  let entries = try @xfs.read_dir(dir) catch {
+    _ => return results
+  } noraise {
+    value => value
+  }
+  for entry in entries {
+    let full_path = dir + "/" + entry
+    let rel_path = if prefix.length() > 0 {
+      prefix + "/" + entry
+    } else {
+      entry
+    }
+    if @xfs.is_dir(full_path) {
+      for sub in scan_yaml_files(full_path, rel_path) {
+        results.push(sub)
+      }
+    } else if entry.has_suffix(".yml") || entry.has_suffix(".yaml") {
+      results.push(rel_path)
+    }
+  }
+  results
+}
+
+///|
+/// Collect workflow files matching include patterns
+fn collect_list_workflows(
+  patterns : Array[String],
+) -> Array[WorkflowListRecord] raise {
+  let paths : Array[String] = []
+  let seen : Map[String, Bool] = {}
+  for pattern in patterns {
+    // Simple glob expansion
+    if pattern.contains("*") {
+      // e.g. "**/*.yml" or ".github/workflows/*.yml"
+      // Find the static prefix before the first *
+      let mut prefix_end = 0
+      for i in 0..<pattern.length() {
+        if pattern[i] == '*' {
+          break
+        }
+        if pattern[i] == '/' {
+          prefix_end = i + 1
+        }
+      }
+      let dir = if prefix_end > 0 {
+        String::unsafe_substring(pattern, start=0, end=prefix_end - 1)
+      } else {
+        "."
+      }
+      let dir_prefix = if prefix_end > 0 {
+        String::unsafe_substring(pattern, start=0, end=prefix_end)
+      } else {
+        ""
+      }
+      if @xfs.path_exists(dir) {
+        let all_files = scan_yaml_files(dir, "")
+        for file in all_files {
+          let full_rel = if dir_prefix.length() > 0 {
+            dir_prefix + file
+          } else {
+            file
+          }
+          if glob_match(pattern, full_rel) &&
+            not(seen.get(full_rel).unwrap_or(false)) {
+            paths.push(full_rel)
+            seen[full_rel] = true
+          }
+        }
+      }
+    } else if @xfs.path_exists(pattern) {
+      if @xfs.is_dir(pattern) {
+        // Directory: scan for yaml files
+        let all_files = scan_yaml_files(pattern, pattern)
+        for file in all_files {
+          if not(seen.get(file).unwrap_or(false)) {
+            paths.push(file)
+            seen[file] = true
+          }
+        }
+      } else if not(seen.get(pattern).unwrap_or(false)) {
+        // Exact file
+        paths.push(pattern)
+        seen[pattern] = true
+      }
+    }
+  }
+  let records : Array[WorkflowListRecord] = []
+  for path in paths {
+    let name = match read_text(path) {
+      Some(text) =>
+        match @ar.parse_workflow_yaml(text).workflow {
+          Some(workflow) =>
+            if workflow.name.length() > 0 {
+              workflow.name
+            } else {
+              workflow_name_from_path(path)
+            }
+          None => workflow_name_from_path(path)
+        }
+      None => workflow_name_from_path(path)
+    }
+    records.push({ name, path })
+  }
+  records
+}
+
+///|
+fn handle_list_command(args : Array[String]) -> Int {
+  let config = load_actrun_config(".")
+  // Collect patterns: CLI args or config includes or default
+  let patterns : Array[String] = []
+  for i in 2..<args.length() {
+    patterns.push(args[i])
+  }
+  if patterns.length() == 0 {
+    for inc in config.includes {
+      patterns.push(inc)
+    }
+  }
+  if patterns.length() == 0 {
+    patterns.push(".github/workflows/*.yml")
+    patterns.push(".github/workflows/*.yaml")
+  }
+  let records = try collect_list_workflows(patterns) catch {
+    _ => return 1
+  } noraise {
+    value => value
+  }
+  if records.length() == 0 {
+    println("No workflows found.")
+    return 0
+  }
+  for record in records {
+    println(record.name)
+    println("  actrun " + record.path)
+    println("")
+  }
   0
 }
 
@@ -4828,6 +5014,13 @@ async fn main {
   }
   if cli_args.length() > 1 && cli_args[1] == "init" {
     let exit_code = handle_init_command()
+    if exit_code != 0 {
+      @xsys.exit(exit_code)
+    }
+    return
+  }
+  if cli_args.length() > 1 && cli_args[1] == "list" {
+    let exit_code = handle_list_command(cli_args)
     if exit_code != 0 {
       @xsys.exit(exit_code)
     }
