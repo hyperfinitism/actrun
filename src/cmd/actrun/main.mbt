@@ -19,6 +19,7 @@ struct CliOptions {
   skip_actions : Array[String]
   dispatch_inputs : Map[String, String]
   dry_run : Bool
+  trust_actions : Bool
 }
 
 ///|
@@ -196,6 +197,7 @@ fn usage_text() -> String {
   "  --worktree                   Shorthand for --workspace-mode worktree\n" +
   "  --tmp                        Shorthand for --workspace-mode tmp\n" +
   "  --input <key=value>          Set workflow_dispatch input (repeatable)\n" +
+  "  --trust                      Trust all third-party actions without prompt\n" +
   "  --env <file>                 Load environment variables from file\n" +
   "\n" +
   "Storage flags:\n" +
@@ -1732,12 +1734,18 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
   let skip_actions : Array[String] = []
   let dispatch_inputs : Map[String, String] = {}
   let mut dry_run = false
+  let mut trust_actions = false
   let mut index = 1
 
   while index < args.length() {
     let arg = args[index]
     if arg == "--dry-run" {
       dry_run = true
+      index += 1
+      continue
+    }
+    if arg == "--trust" {
+      trust_actions = true
       index += 1
       continue
     }
@@ -1882,6 +1890,7 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
       skip_actions,
       dispatch_inputs,
       dry_run,
+      trust_actions,
     }),
     errors,
   }
@@ -2380,6 +2389,50 @@ async fn run_in_docker_container(options : CliOptions) -> Int {
     print_errors([err.trim_end(chars="\n").to_string()])
   }
   code
+}
+
+///|
+fn is_trusted_action_owner(uses : String) -> Bool {
+  uses.has_prefix("actions/") ||
+  uses.has_prefix("./") ||
+  uses.has_prefix("../") ||
+  uses.has_prefix("docker://") ||
+  uses.has_prefix("wasm://") ||
+  uses.has_prefix("builtin://")
+}
+
+///|
+fn collect_third_party_actions(workflow : @ar.WorkflowSpec) -> Array[String] {
+  let seen : Map[String, Bool] = {}
+  let result : Array[String] = []
+  for job in workflow.jobs {
+    for step in job.steps {
+      match step.uses {
+        Some(uses) =>
+          if not(is_trusted_action_owner(uses)) && not(seen.contains(uses)) {
+            seen[uses] = true
+            result.push(uses)
+          }
+        None => ()
+      }
+    }
+  }
+  result
+}
+
+///|
+#cfg(target="native")
+async fn read_stdin_line() -> String {
+  let (code, stdout, _) = @process.collect_output(
+    "sh",
+    ["-c", "read answer && echo \"$answer\""],
+    cwd=".",
+  )
+  if code == 0 {
+    stdout.text().trim(chars=" \t\r\n").to_string()
+  } else {
+    ""
+  }
 }
 
 ///|
@@ -3616,6 +3669,26 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
     return 0
   }
 
+  // Check for third-party actions and prompt for confirmation
+  let trust_env = @xsys.get_env_var("ACTRUN_TRUST").unwrap_or("") == "true"
+  if not(options.trust_actions) && not(trust_env) && not(options.dry_run) {
+    let third_party = collect_third_party_actions(effective_workflow)
+    if third_party.length() > 0 {
+      println("The following third-party actions will be fetched and executed:")
+      for action_ref in third_party {
+        println("  " + action_ref)
+      }
+      println("")
+      println("Use --trust to skip this prompt, or Ctrl+C to cancel.")
+      println("Continue? [y/N]")
+      let answer = read_stdin_line()
+      let trimmed = answer.trim(chars=" \t\r\n").to_lower()
+      if trimmed != "y" && trimmed != "yes" {
+        println("Aborted.")
+        return 1
+      }
+    }
+  }
   let prefetch = @ar.prefetch_workflow_github_actions_native(
     effective_workflow, execution_root,
   )
