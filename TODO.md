@@ -129,6 +129,8 @@ The approach has two stages:
 - [ ] `actions/cache`
   - [x] `enableCrossOsArchive` (no-op locally)
   - [ ] cache version semantics
+  - [ ] `save-always` (save cache even on step failure)
+  - [ ] cache eviction (7-day unused cleanup, size limits)
   - [x] path list normalization (`~` expansion, trim)
   - [x] Post-save edge case on failure/cancel (correctly skips post on always() + cancel)
 - [ ] `actions/setup-node`
