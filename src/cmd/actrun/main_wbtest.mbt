@@ -1199,3 +1199,301 @@ test "dotenv: undefined variable expands to empty" {
   let r = parse_dotenv("FOO=${UNDEFINED_VAR_12345}")
   inspect(r.entries.get("FOO").unwrap_or(""), content="")
 }
+
+///|
+test "cli: parse --no-nix flag" {
+  let result = parse_cli_args(["actrun", "ci.yml", "--no-nix"])
+  inspect(result.errors, content="[]")
+  let options = expect_cli_options(result)
+  inspect(options.nix_mode, content="off")
+  inspect(options.nix_packages, content="[]")
+}
+
+///|
+test "cli: parse --nix flag" {
+  let result = parse_cli_args(["actrun", "ci.yml", "--nix"])
+  inspect(result.errors, content="[]")
+  let options = expect_cli_options(result)
+  inspect(options.nix_mode, content="auto")
+}
+
+///|
+test "cli: parse --nix-packages flag" {
+  let result = parse_cli_args([
+    "actrun", "ci.yml", "--nix-packages", "python312 nodejs",
+  ])
+  inspect(result.errors, content="[]")
+  let options = expect_cli_options(result)
+  inspect(
+    options.nix_packages,
+    content=(
+      #|["python312", "nodejs"]
+    ),
+  )
+}
+
+///|
+test "toml: parse string values" {
+  let result = parse_toml_minimal(
+    "workspace_mode = \"worktree\"\ntrust_actions = true\n",
+  )
+  inspect(result.entries.get("workspace_mode"), content="Some(\"worktree\")")
+  inspect(result.entries.get("trust_actions"), content="Some(\"true\")")
+}
+
+///|
+test "toml: parse array values" {
+  let result = parse_toml_minimal(
+    "skip_actions = [\"actions/checkout\", \"actions/setup-node\"]\n",
+  )
+  inspect(
+    result.arrays.get("skip_actions"),
+    content=(
+      #|Some(["actions/checkout", "actions/setup-node"])
+    ),
+  )
+}
+
+///|
+test "toml: skip comments and empty lines" {
+  let result = parse_toml_minimal("# comment\n\nworkspace_mode = \"local\"\n")
+  inspect(result.entries.get("workspace_mode"), content="Some(\"local\")")
+  inspect(result.entries.length(), content="1")
+}
+
+///|
+test "toml: section headers prefix keys" {
+  let result = parse_toml_minimal("[section]\nkey = \"value\"\n")
+  inspect(result.entries.get("section.key"), content="Some(\"value\")")
+}
+
+///|
+test "toml: top-level keys have no section prefix" {
+  let result = parse_toml_minimal("top = \"val\"\n[section]\nkey = \"value\"\n")
+  inspect(result.entries.get("top"), content="Some(\"val\")")
+  inspect(result.entries.get("section.key"), content="Some(\"value\")")
+}
+
+///|
+test "config: merge cli overrides config" {
+  let config : ActrunConfig = {
+    workspace_mode: "worktree",
+    local_skip_actions: ["actions/checkout"],
+    trust_actions: true,
+    nix_mode: "auto",
+    nix_packages: ["python312"],
+    container_runtime: "podman",
+    affected: {},
+  }
+  let cli = parse_cli_args(["actrun", "ci.yml", "--local", "--no-nix"])
+  let options = expect_cli_options(cli)
+  let merged = merge_config_into_options(options, config)
+  // CLI --local overrides config worktree
+  inspect(merged.workspace_mode, content="local")
+  // CLI --no-nix overrides config auto
+  inspect(merged.nix_mode, content="off")
+  // Config values used when CLI has no override
+  inspect(merged.trust_actions, content="true")
+  inspect(
+    merged.skip_actions,
+    content=(
+      #|["actions/checkout"]
+    ),
+  )
+}
+
+///|
+test "config: cli skip_actions overrides local_skip_actions" {
+  let config : ActrunConfig = {
+    workspace_mode: "",
+    local_skip_actions: ["actions/checkout"],
+    trust_actions: false,
+    nix_mode: "",
+    nix_packages: [],
+    container_runtime: "",
+    affected: {},
+  }
+  let cli = parse_cli_args([
+    "actrun", "ci.yml", "--skip-action", "actions/setup-node",
+  ])
+  let options = expect_cli_options(cli)
+  let merged = merge_config_into_options(options, config)
+  inspect(
+    merged.skip_actions,
+    content=(
+      #|["actions/setup-node"]
+    ),
+  )
+}
+
+///|
+test "config: default when no actrun.toml" {
+  let config = load_actrun_config("/nonexistent/path")
+  inspect(config.workspace_mode, content="")
+  inspect(config.trust_actions, content="false")
+  inspect(config.local_skip_actions, content="[]")
+}
+
+///|
+test "cli: parse --container-runtime flag" {
+  let result = parse_cli_args([
+    "actrun", "ci.yml", "--container-runtime", "podman",
+  ])
+  inspect(result.errors, content="[]")
+  let options = expect_cli_options(result)
+  inspect(options.container_runtime, content="podman")
+}
+
+///|
+test "config: container_runtime from config" {
+  let config : ActrunConfig = {
+    workspace_mode: "",
+    local_skip_actions: [],
+    trust_actions: false,
+    nix_mode: "",
+    nix_packages: [],
+    container_runtime: "podman",
+    affected: {},
+  }
+  let cli = parse_cli_args(["actrun", "ci.yml"])
+  let options = expect_cli_options(cli)
+  let merged = merge_config_into_options(options, config)
+  inspect(merged.container_runtime, content="podman")
+}
+
+///|
+test "config: cli container_runtime overrides config" {
+  let config : ActrunConfig = {
+    workspace_mode: "",
+    local_skip_actions: [],
+    trust_actions: false,
+    nix_mode: "",
+    nix_packages: [],
+    container_runtime: "docker",
+    affected: {},
+  }
+  let cli = parse_cli_args(["actrun", "ci.yml", "--container-runtime", "lima"])
+  let options = expect_cli_options(cli)
+  let merged = merge_config_into_options(options, config)
+  inspect(merged.container_runtime, content="lima")
+}
+
+///|
+test "container runtime: resolve bin names" {
+  inspect(resolve_container_runtime_bin("docker"), content="(\"docker\", [])")
+  inspect(resolve_container_runtime_bin("podman"), content="(\"podman\", [])")
+  inspect(
+    resolve_container_runtime_bin("container"),
+    content="(\"container\", [])",
+  )
+  inspect(resolve_container_runtime_bin("nerdctl"), content="(\"nerdctl\", [])")
+  inspect(
+    resolve_container_runtime_bin("lima"),
+    content=(
+      #|("lima", ["nerdctl"])
+    ),
+  )
+  inspect(
+    resolve_container_runtime_bin("/usr/bin/custom"),
+    content="(\"/usr/bin/custom\", [])",
+  )
+}
+
+///|
+test "toml: all-comments config parses as empty" {
+  let template = "# comment line\n# key = \"value\"\n\n# another\n"
+  let parsed = parse_toml_minimal(template)
+  inspect(parsed.entries.length(), content="0")
+  inspect(parsed.arrays.length(), content="0")
+}
+
+///|
+test "toml: affected section parsing" {
+  let toml = "[affected.ci.yml]\npatterns = [\"src/**\", \"*.toml\"]\n"
+  let parsed = parse_toml_minimal(toml)
+  inspect(
+    parsed.arrays.get("affected.ci.yml.patterns"),
+    content=(
+      #|Some(["src/**", "*.toml"])
+    ),
+  )
+}
+
+///|
+test "config: affected patterns loaded" {
+  // Simulate what load_actrun_config does with affected section
+  let toml = "[affected.ci.yml]\npatterns = [\"src/**\"]\n"
+  let parsed = parse_toml_minimal(toml)
+  let result : Map[String, Array[String]] = {}
+  for key, patterns in parsed.arrays {
+    if key.has_prefix("affected.") {
+      let rest = String::unsafe_substring(key, start=9, end=key.length())
+      let mut last_dot = -1
+      for i in 0..<rest.length() {
+        if rest[i] == '.' {
+          last_dot = i
+        }
+      }
+      if last_dot > 0 {
+        let wf = String::unsafe_substring(rest, start=0, end=last_dot)
+          .trim(chars="\"'")
+          .to_string()
+        result[wf] = patterns
+      }
+    }
+  }
+  inspect(
+    result.get("ci.yml"),
+    content=(
+      #|Some(["src/**"])
+    ),
+  )
+}
+
+///|
+test "glob_match: basic patterns" {
+  // Exact match
+  inspect(glob_match("README.md", "README.md"), content="true")
+  inspect(glob_match("README.md", "src/main.rs"), content="false")
+  // Wildcard extension
+  inspect(glob_match("*.rs", "main.rs"), content="true")
+  inspect(glob_match("*.rs", "main.ts"), content="false")
+  // Directory prefix
+  inspect(glob_match("src/**", "src/main.rs"), content="true")
+  inspect(glob_match("src/**", "test/main.rs"), content="false")
+  // Double-star extension
+  inspect(glob_match("**/*.rs", "src/main.rs"), content="true")
+  inspect(glob_match("**/*.rs", "main.rs"), content="true")
+  inspect(glob_match("**/*.rs", "main.ts"), content="false")
+  // Directory wildcard
+  inspect(glob_match("src/*", "src/main.rs"), content="true")
+  inspect(glob_match("src/*", "src/sub/main.rs"), content="false")
+}
+
+///|
+test "files_match_patterns: matches at least one" {
+  inspect(
+    files_match_patterns(["src/main.rs", "README.md"], ["src/**"]),
+    content="true",
+  )
+  inspect(
+    files_match_patterns(["README.md", "docs/guide.md"], ["src/**"]),
+    content="false",
+  )
+}
+
+///|
+test "cli: parse --affected flag" {
+  let result = parse_cli_args(["actrun", "ci.yml", "--affected"])
+  let options = expect_cli_options(result)
+  inspect(options.affected, content="true")
+  inspect(options.retry, content="false")
+}
+
+///|
+test "cli: parse --retry flag" {
+  let result = parse_cli_args(["actrun", "ci.yml", "--retry"])
+  let options = expect_cli_options(result)
+  inspect(options.retry, content="true")
+  inspect(options.affected, content="false")
+}

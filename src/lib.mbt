@@ -375,7 +375,10 @@ pub fn strip_unsupported_workflow_fields(
 }
 
 ///|
-fn step_matches_skip_pattern(step : StepSpec, patterns : Array[String]) -> Bool {
+pub fn step_matches_skip_pattern(
+  step : StepSpec,
+  patterns : Array[String],
+) -> Bool {
   match step.uses {
     Some(uses) => {
       let mut matched = false
@@ -408,6 +411,30 @@ pub fn filter_workflow_steps(
       }
     }
     filtered_jobs.push({ ..job, steps: filtered_steps })
+  }
+  { ..workflow, jobs: filtered_jobs }
+}
+
+///|
+pub fn filter_workflow_jobs(
+  workflow : WorkflowSpec,
+  skip_job_ids : Array[String],
+) -> WorkflowSpec {
+  if skip_job_ids.length() == 0 {
+    return workflow
+  }
+  let filtered_jobs : Array[JobSpec] = []
+  for job in workflow.jobs {
+    let mut should_skip = false
+    for skip_id in skip_job_ids {
+      if job.id == skip_id {
+        should_skip = true
+        break
+      }
+    }
+    if not(should_skip) {
+      filtered_jobs.push(job)
+    }
   }
   { ..workflow, jobs: filtered_jobs }
 }
