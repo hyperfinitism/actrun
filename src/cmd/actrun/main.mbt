@@ -2324,6 +2324,65 @@ async fn handle_doctor_command() -> Int {
 }
 
 ///|
+#cfg(target="native")
+async fn run_in_docker_container(options : CliOptions) -> Int {
+  let docker_bin = @xsys.get_env_var("ACTRUN_CONTAINER_RUNTIME").unwrap_or(
+    @xsys.get_env_var("ACTRUN_DOCKER_BIN").unwrap_or("docker"),
+  )
+  let image = @xsys.get_env_var("ACTRUN_DOCKER_IMAGE").unwrap_or(
+    "ghcr.io/mizchi/actrun:latest",
+  )
+  let cwd = @env.current_dir().unwrap_or(
+    @xsys.get_env_var("PWD").unwrap_or("."),
+  )
+  let args : Array[String] = [
+    "run",
+    "--rm",
+    "-v",
+    cwd + ":/workspace",
+    "-w",
+    "/workspace",
+  ]
+  // Forward ACTRUN_SECRET_* and ACTRUN_VAR_* env vars
+  for key, value in @xsys.get_env_vars() {
+    if key.has_prefix("ACTRUN_SECRET_") || key.has_prefix("ACTRUN_VAR_") {
+      args.push("-e")
+      args.push(key + "=" + value)
+    }
+  }
+  // Forward dispatch inputs
+  for key, value in options.dispatch_inputs {
+    args.push("-e")
+    args.push("ACTRUN_INPUT_" + key + "=" + value)
+  }
+  args.push(image)
+  args.push("workflow")
+  args.push("run")
+  args.push(options.workflow_path)
+  for pattern in options.skip_actions {
+    args.push("--skip-action")
+    args.push(pattern)
+  }
+  if options.dry_run {
+    args.push("--dry-run")
+  }
+  let (code, stdout, stderr) = @process.collect_output(
+    docker_bin,
+    args,
+    cwd=".",
+  )
+  let out = stdout.text()
+  if out.length() > 0 {
+    println(out.trim_end(chars="\n").to_string())
+  }
+  let err = stderr.text()
+  if err.length() > 0 {
+    print_errors([err.trim_end(chars="\n").to_string()])
+  }
+  code
+}
+
+///|
 fn print_dry_run_plan(
   workflow : @ar.WorkflowSpec,
   lowered : @ar.LoweringResult,
@@ -3358,10 +3417,7 @@ async fn handle_workflow_run_command(options : CliOptions) -> Int {
       return 1
     }
   } else if workspace_mode == "docker" {
-    print_errors([
-      "workspace mode 'docker' is not implemented yet for local workflow execution",
-    ])
-    return 1
+    return run_in_docker_container(options)
   }
 
   let mut workflow_path = options.workflow_path

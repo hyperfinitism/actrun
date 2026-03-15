@@ -59,7 +59,7 @@ Lock down "where to execute" first. If this is ambiguous, both actions compatibi
   - [x] `--workspace-mode local` (in-place execution, default)
   - [x] `--workspace-mode worktree` (isolation via `git worktree add`)
   - [x] `--workspace-mode tmp` (isolation via `git clone`)
-  - [ ] `--workspace-mode docker`
+  - [x] `--workspace-mode docker` (run workflow in container via ghcr.io/mizchi/actrun)
   - [x] Container runtime backends: Docker, Podman, Lima, Apple Containers (`container` framework)
   - [x] Fix cleanup / isolation policy for each mode
   - [x] Security test confirming `_build/actrun/file_commands` / `runner_temp` (which may contain secrets) are cleaned up after runs
