@@ -2377,6 +2377,18 @@ fn exec_remove_tree(path : String) -> Bool {
   if not(@xfs.path_exists(path)) {
     return true
   }
+  // Try remove_file first — this handles regular files AND symlinks.
+  // Symlinks are unlinked without following, preventing recursive deletion
+  // of symlink targets (e.g. a symlink to / would not cause rm -rf /).
+  let removed_as_file = try @xfs.remove_file(path) catch {
+    _ => false
+  } noraise {
+    _ => true
+  }
+  if removed_as_file {
+    return true
+  }
+  // Only recurse into real directories (not symlinks, which were handled above)
   if exec_is_dir(path) {
     let entries = try @xfs.read_dir(path) catch {
       _ => []
@@ -2394,11 +2406,7 @@ fn exec_remove_tree(path : String) -> Bool {
       _ => true
     }
   } else {
-    try @xfs.remove_file(path) catch {
-      _ => false
-    } noraise {
-      _ => true
-    }
+    false
   }
 }
 
@@ -2497,6 +2505,26 @@ fn parse_bool_true_default(value : String) -> Bool {
 fn parse_bool_false_default(value : String) -> Bool {
   let normalized = value.trim(chars=" \t\r\n").to_lower()
   normalized == "true" || normalized == "1" || normalized == "yes"
+}
+
+///|
+/// Validate that a user-provided path stays within the workspace.
+/// Returns the resolved absolute path, or None if it escapes.
+fn validate_workspace_path(
+  workspace_root : String,
+  user_path : String,
+) -> String? {
+  let resolved = resolve_task_cwd(workspace_root, user_path)
+  let resolved_abs = absolute_exec_path(resolved)
+  let workspace_abs = absolute_exec_path(
+    resolve_task_cwd(workspace_root, ""),
+  )
+  if resolved_abs == workspace_abs ||
+    resolved_abs.has_prefix(workspace_abs + "/") {
+    Some(resolved_abs)
+  } else {
+    None
+  }
 }
 
 ///|

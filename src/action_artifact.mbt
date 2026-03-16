@@ -375,6 +375,10 @@ fn artifact_select_upload_files(
       }
       continue
     }
+    // Reject paths that escape the workspace
+    guard validate_workspace_path(workspace_root, path) is Some(_) else {
+      continue
+    }
     let resolved_path = resolve_task_cwd(workspace_root, path)
     if not(@xfs.path_exists(resolved_path)) {
       continue

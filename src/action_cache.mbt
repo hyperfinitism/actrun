@@ -327,6 +327,10 @@ fn restore_cache_store_native(
         value => value
       }
       for root_entry in root_entries {
+        // Reject entries that could escape the workspace via path traversal
+        if root_entry.contains("..") {
+          continue
+        }
         if not(
             exec_copy_tree(
               source + "/" + root_entry,
@@ -336,6 +340,8 @@ fn restore_cache_store_native(
           return Err("failed to restore cache '\{matched_key}'")
         }
       }
+    } else if entry.contains("..") {
+      return Err("cache entry '\{entry}' contains invalid path component")
     } else if not(exec_copy_tree(source, workspace_root + "/" + entry)) {
       return Err("failed to restore cache '\{matched_key}'")
     }
