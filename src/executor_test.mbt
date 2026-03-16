@@ -4466,3 +4466,117 @@ async test "security: secrets are masked in stdout" {
   inspect(stdout.contains("super-secret-123"), content="false")
   inspect(stdout.contains("***"), content="true")
 }
+
+///|
+#cfg(target="native")
+async test "security: path traversal in working-directory is contained" {
+  let workspace = prepare_workspace("security-path-traversal")
+  ensure_dir(workspace + "/sub")
+  ensure_dir(workspace + "/sub/deep")
+
+  // A valid working-directory should resolve inside the workspace
+  let workflow = new_workflow("ci", [
+    new_job(
+      "build",
+      [
+        new_run_step(
+          "check-cwd",
+          "pwd",
+          shell=Some("bash"),
+          working_directory=Some("sub/deep"),
+        ),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+  let step = expect_task_report(report, "build/check-cwd")
+  let cwd = step.stdout.trim(chars=" \n\r\t").to_string()
+  // Verify the cwd is rooted inside the workspace
+  inspect(cwd.has_prefix(workspace), content="true")
+  inspect(cwd.contains("sub/deep"), content="true")
+  // Verify it does not escape to a parent directory
+  inspect(cwd.contains(".."), content="false")
+}
+
+///|
+#cfg(target="native")
+async test "security: secrets masked in GITHUB_ENV values" {
+  let workspace = prepare_workspace("security-secrets-env")
+
+  let workflow = new_workflow("ci", [
+    new_job("build", [
+      new_run_step(
+        "export",
+        "echo \"LEAKED=super-secret-456\" >> \"$GITHUB_ENV\"",
+        shell=Some("bash"),
+      ),
+      new_run_step("read", "echo \"$LEAKED\"", shell=Some("bash")),
+    ]),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  let raw_report = execute_lowered_native(lowered, workspace_root=workspace)
+  let masked = mask_report_secrets(raw_report, ["super-secret-456"])
+  let read_stdout = expect_task_report(masked, "build/read").stdout
+  inspect(read_stdout.contains("super-secret-456"), content="false")
+  inspect(read_stdout.contains("***"), content="true")
+}
+
+///|
+#cfg(target="native")
+async test "security: secrets masked in step outputs" {
+  let workspace = prepare_workspace("security-secrets-output")
+
+  let workflow = new_workflow("ci", [
+    new_job("build", [
+      new_run_step(
+        "produce",
+        "echo \"token=my-api-key-789\" >> \"$GITHUB_OUTPUT\"",
+        shell=Some("bash"),
+      ),
+    ]),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  let raw_report = execute_lowered_native(lowered, workspace_root=workspace)
+  let masked = mask_report_secrets(raw_report, ["my-api-key-789"])
+  let step = expect_task_report(masked, "build/produce")
+  inspect(step.stdout.contains("my-api-key-789"), content="false")
+  inspect(step.stderr.contains("my-api-key-789"), content="false")
+}
+
+///|
+#cfg(target="native")
+async test "security: env values cannot inject shell commands" {
+  let workspace = prepare_workspace("security-env-injection")
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "build",
+      [
+        new_run_step("check", "printf '%s' \"$SAFE_VAR\"", shell=Some("bash"), env={
+          "SAFE_VAR": "$(echo pwned)",
+        }),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+  let step = expect_task_report(report, "build/check")
+  // The literal string should be used, not command-substituted
+  inspect(
+    step.stdout.trim(chars=" \n\r\t").to_string(),
+    content="$(echo pwned)",
+  )
+}

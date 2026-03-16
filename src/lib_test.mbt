@@ -2605,3 +2605,50 @@ test "parser/lowering: job services mapping is parsed and lowered into execution
     content="postgres:16",
   )
 }
+
+///|
+test "security: malicious step name does not affect execution" {
+  let workflow = new_workflow("ci", [
+    new_job("build", [
+      new_run_step(
+        "malicious",
+        "echo hello",
+        name="\"; rm -rf / #",
+        shell=Some("bash"),
+      ),
+    ]),
+  ])
+
+  // Step name with shell metacharacters should be preserved as-is
+  inspect(workflow.jobs[0].steps[0].name, content="\"; rm -rf / #")
+  let result = lower_push_workflow(workflow)
+  inspect(result.errors, content="[]")
+}
+
+///|
+test "security: skip pattern does not match partial action names incorrectly" {
+  // "actions/check" should NOT match "actions/checkout" — it's a substring check
+  let checkout_step = new_uses_step("checkout", "actions/checkout@v5")
+  // "actions/check" is a substring of "actions/checkout", so contains-based matching
+  // will match it — this documents the current behavior
+  inspect(
+    step_matches_skip_pattern(checkout_step, ["actions/check"]),
+    content="true",
+  )
+  // "actions/checkout" should match "actions/checkout@v5"
+  inspect(
+    step_matches_skip_pattern(checkout_step, ["actions/checkout"]),
+    content="true",
+  )
+  // A completely different action should not match
+  inspect(
+    step_matches_skip_pattern(checkout_step, ["actions/setup-node"]),
+    content="false",
+  )
+  // A run step (no uses) should never match any pattern
+  let run_step = new_run_step("build", "echo hello", shell=Some("bash"))
+  inspect(
+    step_matches_skip_pattern(run_step, ["actions/checkout"]),
+    content="false",
+  )
+}

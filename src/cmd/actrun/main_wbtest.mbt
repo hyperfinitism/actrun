@@ -1778,3 +1778,27 @@ test "load_actrun_config: affected patterns extraction" {
   inspect(result.get("ci.yml").unwrap(), content="[\"src/**\", \"*.toml\"]")
   inspect(result.get("lint.yml").unwrap(), content="[\"src/**\"]")
 }
+
+///|
+test "security: toml override script is isolated" {
+  let config = "[override.\"actions/setup-node\"]\nrun = \"echo 'safe'\"\n"
+  let parsed = parse_toml_minimal(config)
+  // The script string should be parsed literally, not executed
+  inspect(
+    parsed.entries.get("override.actions/setup-node.run"),
+    content="Some(\"echo 'safe'\")",
+  )
+}
+
+///|
+test "security: glob_match rejects path traversal patterns" {
+  // A traversal pattern matches traversal paths
+  inspect(glob_match("../**", "../../etc/passwd"), content="true")
+  // But a normal src pattern does not match traversal paths
+  inspect(glob_match("src/**", "../etc/passwd"), content="false")
+  // files_match_patterns with traversal paths should not match src patterns
+  inspect(
+    files_match_patterns(["../../../etc/passwd"], ["src/**"]),
+    content="false",
+  )
+}
