@@ -223,16 +223,6 @@ async fn exec_git_command_text(
 }
 
 ///|
-async fn exec_git_list_files(git_bin : String, cwd : String) -> String? {
-  let (code, stdout, _) = exec_git_command_text(git_bin, ["ls-files"], cwd)
-  if code == 0 {
-    Some(stdout)
-  } else {
-    None
-  }
-}
-
-///|
 fn exec_command_message(
   stdout : String,
   stderr : String,
@@ -319,76 +309,6 @@ async fn exec_git_update_submodules(
 }
 
 ///|
-fn exec_remove_missing_tracked_files(
-  destination : String,
-  current_tracked : String,
-  next_tracked : String,
-) -> Bool {
-  let next_map : Map[String, Bool] = {}
-  for relative in split_nonempty_lines(next_tracked) {
-    next_map[relative] = true
-  }
-  for relative in split_nonempty_lines(current_tracked) {
-    if next_map.get(relative).unwrap_or(false) {
-      continue
-    }
-    if not(exec_remove_tree(destination + "/" + relative)) {
-      return false
-    }
-  }
-  true
-}
-
-///|
-fn exec_remove_all_tracked_files(
-  destination : String,
-  current_tracked : String,
-) -> Bool {
-  for relative in split_nonempty_lines(current_tracked) {
-    if not(exec_remove_tree(destination + "/" + relative)) {
-      return false
-    }
-  }
-  true
-}
-
-///|
-/// Safely replace .git in dst with the one from src.
-/// Copies new .git first, then removes old — ensures .git always exists.
-fn exec_safe_replace_git(src : String, dst : String) -> Bool {
-  let new_git = dst + "/.git"
-  let backup_git = dst + "/.git.actrun-backup"
-  // Move current .git to backup
-  if @xfs.path_exists(new_git) {
-    if not(exec_copy_tree(new_git, backup_git)) {
-      return false
-    }
-  }
-  // Copy new .git from source
-  if not(exec_remove_tree(new_git)) {
-    // Restore backup on failure
-    if @xfs.path_exists(backup_git) {
-      ignore(exec_remove_tree(new_git))
-      ignore(exec_copy_tree(backup_git, new_git))
-      ignore(exec_remove_tree(backup_git))
-    }
-    return false
-  }
-  if not(exec_copy_tree(src + "/.git", new_git)) {
-    // Restore backup on failure
-    if @xfs.path_exists(backup_git) {
-      ignore(exec_remove_tree(new_git))
-      ignore(exec_copy_tree(backup_git, new_git))
-    }
-    ignore(exec_remove_tree(backup_git))
-    return false
-  }
-  // Success — remove backup
-  ignore(exec_remove_tree(backup_git))
-  true
-}
-
-///|
 /// Overwrite tracked files from clone into dst without deleting anything.
 /// Preserves all existing files including .git, untracked files, and
 /// tracked files that are not in the clone.
@@ -414,80 +334,12 @@ fn exec_overwrite_from_clone(src : String, dst : String) -> Bool {
 }
 
 ///|
-fn exec_copy_dir_contents_clean_tracked(
-  src : String,
-  dst : String,
-  current_tracked : String,
-) -> Bool {
-  if not(ensure_exec_dir_recursive(dst)) {
-    return false
-  }
-  // Remove all current tracked files (clean mode)
-  if not(exec_remove_all_tracked_files(dst, current_tracked)) {
-    return false
-  }
-  // Safely replace .git with the cloned one
-  if not(exec_safe_replace_git(src, dst)) {
-    return false
-  }
-  // Copy all non-.git entries from clone
-  let entries = try @xfs.read_dir(src) catch {
-    _ => []
-  } noraise {
-    value => value
-  }
-  for entry in entries {
-    if entry == ".git" {
-      continue
-    }
-    if not(exec_copy_tree(src + "/" + entry, dst + "/" + entry)) {
-      return false
-    }
-  }
-  true
-}
-
-///|
-fn exec_copy_dir_contents_preserving_untracked(
-  src : String,
-  dst : String,
-  current_tracked : String,
-  next_tracked : String,
-) -> Bool {
-  if not(ensure_exec_dir_recursive(dst)) {
-    return false
-  }
-  // Safely replace .git with the cloned one
-  if not(exec_safe_replace_git(src, dst)) {
-    return false
-  }
-  if not(exec_remove_missing_tracked_files(dst, current_tracked, next_tracked)) {
-    return false
-  }
-  let entries = try @xfs.read_dir(src) catch {
-    _ => []
-  } noraise {
-    value => value
-  }
-  for entry in entries {
-    if entry == ".git" {
-      continue
-    }
-    if not(exec_copy_tree(src + "/" + entry, dst + "/" + entry)) {
-      return false
-    }
-  }
-  true
-}
-
-///|
 async fn exec_git_clone_checkout(
   plan : TaskPlan,
   workspace_root : String,
   source_root : String,
   checkout_root : String,
   fetch_depth : Int,
-  clean : Bool,
   resolved_plan_env : Map[String, String],
   fetch_tags? : Bool = true,
   show_progress? : Bool = false,
@@ -741,8 +593,10 @@ async fn execute_builtin_checkout_native(
   let sparse_input = resolved_plan_env
     .get("INPUT_SPARSE_CHECKOUT")
     .unwrap_or("")
-  let clean = parse_bool_true_default(
-    resolved_plan_env.get("INPUT_CLEAN").unwrap_or("true"),
+  ignore(
+    parse_bool_true_default(
+      resolved_plan_env.get("INPUT_CLEAN").unwrap_or("true"),
+    ),
   )
   let fetch_depth = match
     parse_checkout_fetch_depth(
@@ -809,7 +663,6 @@ async fn execute_builtin_checkout_native(
         source_root,
         checkout_root,
         fetch_depth,
-        clean,
         resolved_plan_env,
         fetch_tags~,
         show_progress~,
