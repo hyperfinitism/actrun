@@ -5,3 +5,8 @@ target
 .mooncakes/
 .repos/
 .moonagent/
+dist/
+downloaded/
+actrun.toml
+.env.local
+node_modules/
