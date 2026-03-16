@@ -210,3 +210,33 @@ patterns = ["src/**", "*.config.*"]
 [affected."docs.yml"]
 patterns = ["docs/**", "*.md"]
 ```
+
+## Cloud-Only Features
+
+Some GitHub Actions features are designed for cloud execution and have no local equivalent. actrun handles these gracefully:
+
+### OIDC (OpenID Connect)
+
+Workflows using OIDC for cloud authentication (`permissions: id-token: write`) work without errors — `permissions` blocks are silently ignored. However, `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` are not set, so steps calling `getIDToken()` will fail.
+
+**Recommended approach**: skip or override OIDC-dependent steps:
+
+```toml
+# actrun.toml
+[override."aws-actions/configure-aws-credentials"]
+run = "echo 'using local AWS credentials'"
+```
+
+Or use `if: ${{ !env.ACTRUN_LOCAL }}` in the workflow:
+
+```yaml
+- uses: aws-actions/configure-aws-credentials@v4
+  if: ${{ !env.ACTRUN_LOCAL }}
+  with:
+    role-to-assume: arn:aws:iam::123456:role/deploy
+```
+
+### Permissions and Concurrency
+
+- `permissions`: Silently ignored. Local execution uses host user permissions.
+- `concurrency`: Silently ignored. Local execution is sequential.
