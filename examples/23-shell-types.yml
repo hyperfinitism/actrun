@@ -1,0 +1,26 @@
+name: shell-types
+'on': push
+jobs:
+  bash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bash default
+        run: echo "bash: $BASH_VERSION"
+      - name: Explicit bash
+        run: echo "explicit bash: $BASH_VERSION"
+        shell: bash
+      - name: Sh shell
+        run: echo "sh works"
+        shell: sh
+
+  defaults-shell:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Default sh
+        run: echo "default sh"
+      - name: Override to bash
+        run: echo "override: $BASH_VERSION"
+        shell: bash

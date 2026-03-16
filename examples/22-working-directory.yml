@@ -1,0 +1,26 @@
+name: working-directory
+'on': push
+jobs:
+  step-level:
+    runs-on: ubuntu-latest
+    steps:
+      - run: mkdir -p subdir && echo "content" > subdir/file.txt
+      - name: Read from subdirectory
+        run: cat file.txt
+        working-directory: subdir
+
+  defaults-level:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      # First step creates the directory without defaults (uses explicit override)
+      - run: mkdir -p src && echo "from defaults" > src/output.txt
+        working-directory: .
+      - name: Read in default directory
+        run: cat output.txt
+      - name: Write and read
+        run: |
+          echo "hello" > test.txt
+          cat test.txt

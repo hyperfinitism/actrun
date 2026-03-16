@@ -5030,7 +5030,20 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
       return 1
     }
     execution_root = workspace.execution_root
-    workflow_path = join_path(execution_root, options.workflow_path)
+    // Resolve workflow path relative to the git root (not CWD)
+    // since worktree/tmp clones from git root
+    let abs_workflow = absolute_run_store_path(options.workflow_path)
+    let git_root = workspace.source_root
+    if abs_workflow.has_prefix(git_root + "/") {
+      let relative = String::unsafe_substring(
+        abs_workflow,
+        start=git_root.length() + 1,
+        end=abs_workflow.length(),
+      )
+      workflow_path = join_path(execution_root, relative)
+    } else {
+      workflow_path = join_path(execution_root, options.workflow_path)
+    }
     local_workspace = Some(workspace)
   }
   let base_event = match options.event_path {

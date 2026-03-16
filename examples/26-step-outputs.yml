@@ -1,0 +1,11 @@
+name: step-outputs
+'on': push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set output
+        id: producer
+        run: echo "value=hello-from-step" >> "$GITHUB_OUTPUT"
+      - name: Use output
+        run: echo "Got: ${{ steps.producer.outputs.value }}"

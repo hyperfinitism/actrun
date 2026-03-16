@@ -1,0 +1,13 @@
+name: continue-on-error
+'on': push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: This fails but continues
+        run: exit 1
+        continue-on-error: true
+      - name: This should still run
+        run: echo "still running"
+      - name: Check previous outcome
+        run: echo "previous step continued despite error"

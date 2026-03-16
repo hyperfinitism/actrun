@@ -1,0 +1,17 @@
+name: step-if
+'on': push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Always runs
+        run: echo "always"
+      - name: Conditional true
+        if: ${{ true }}
+        run: echo "this runs"
+      - name: Conditional false
+        if: ${{ false }}
+        run: echo "this is skipped"
+      - name: Env check
+        if: ${{ env.ACTRUN_LOCAL == 'true' }}
+        run: echo "running locally"

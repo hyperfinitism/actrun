@@ -1,0 +1,14 @@
+name: multiline-run
+'on': push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Multiline script
+        run: |
+          echo "line 1"
+          echo "line 2"
+          RESULT="combined"
+          echo "result: $RESULT"
+      - name: Single line
+        run: echo "single"
