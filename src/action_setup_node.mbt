@@ -156,9 +156,14 @@ async fn write_setup_node_shim(
     return None
   }
   let shim_path = shim_dir + "/node"
+  let d = "$"
   let script = "#!/bin/sh\n" +
     "set -eu\n" +
-    "if [ \"${1:-}\" = \"--version\" ] || [ \"${1:-}\" = \"-v\" ]; then\n" +
+    "if [ \"" +
+    d +
+    "{1:-}\" = \"--version\" ] || [ \"" +
+    d +
+    "{1:-}\" = \"-v\" ]; then\n" +
     "  printf '%s\\n' '" +
     node_version +
     "'\n" +
@@ -166,7 +171,9 @@ async fn write_setup_node_shim(
     "fi\n" +
     "exec '" +
     node_bin.replace_all(old="'", new="'\"'\"'") +
-    "' \"$@\"\n"
+    "' \"" +
+    d +
+    "@\"\n"
   if not(write_exec_text(shim_path, script)) {
     return None
   }
@@ -312,7 +319,6 @@ fn compute_setup_node_cache_key(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_setup_node_native(
   plan : TaskPlan,
   workspace_root : String,
@@ -491,7 +497,6 @@ async fn execute_setup_node_native(
 }
 
 ///|
-#cfg(target="native")
 fn execute_setup_node_cache_post_native(
   plan : TaskPlan,
   workspace_root : String,

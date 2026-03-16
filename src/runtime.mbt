@@ -213,26 +213,12 @@ pub fn compute_bit_changed_paths(
 }
 
 ///|
-#cfg(target="native")
 pub fn compute_bit_changed_paths_native(
   repo_root : String,
   event : PushEvent,
 ) -> BitChangedPathsResult {
   let fs = @bitosfs.OsFs::new()
   compute_bit_changed_paths(fs, repo_root, event)
-}
-
-///|
-#cfg(not(target="native"))
-pub fn compute_bit_changed_paths_native(
-  repo_root : String,
-  event : PushEvent,
-) -> BitChangedPathsResult {
-  ignore(repo_root)
-  ignore(event)
-  bit_changed_paths_error(
-    "bit changed-path calculation is only available on native target",
-  )
 }
 
 ///|
@@ -289,7 +275,6 @@ pub fn materialize_bit_push_workspace(
 }
 
 ///|
-#cfg(target="native")
 pub fn materialize_bit_push_workspace_native(
   repo_root : String,
   event : PushEvent,
@@ -304,22 +289,5 @@ pub fn materialize_bit_push_workspace_native(
     event,
     workspace_root,
     remote_url~,
-  )
-}
-
-///|
-#cfg(not(target="native"))
-pub fn materialize_bit_push_workspace_native(
-  repo_root : String,
-  event : PushEvent,
-  workspace_root : String,
-  remote_url? : String = "",
-) -> BitWorkspaceResult {
-  ignore(repo_root)
-  ignore(event)
-  ignore(workspace_root)
-  ignore(remote_url)
-  bit_workspace_error(
-    "bit workspace materialization is only available on native target",
   )
 }

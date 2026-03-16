@@ -1,0 +1,30 @@
+{
+  "name": "actrun",
+  "version": "0.7.0",
+  "description": "A local GitHub Actions runner",
+  "bin": {
+    "actrun": "./dist/actrun.js"
+  },
+  "scripts": {
+    "build": "moon build src/cmd/actrun --target js && node scripts/bundle-js.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "github-actions",
+    "workflow",
+    "runner",
+    "ci",
+    "local"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mizchi/actrun.git"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist/actrun.js"
+  ]
+}

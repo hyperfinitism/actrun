@@ -1778,7 +1778,6 @@ async fn container_inspect_health_status(
 }
 
 ///|
-#cfg(target="native")
 async fn wait_for_job_service_health_native(
   service_id : String,
   container_name : String,
@@ -1809,7 +1808,6 @@ async fn wait_for_job_service_health_native(
 }
 
 ///|
-#cfg(target="native")
 async fn start_job_services_native(
   job_id : String,
   services : Map[String, JobContainerSpec],
@@ -2549,7 +2547,6 @@ fn builtin_task_result(report : TaskRunReport) -> TaskExecutionResult {
 }
 
 ///|
-#cfg(target="native")
 fn configured_exec_bin(
   env_name : String,
   resolved_plan_env : Map[String, String],
@@ -2572,7 +2569,6 @@ fn configured_exec_bin(
 }
 
 ///|
-#cfg(target="native")
 fn resolve_exec_bin_for_workspace(
   configured : String,
   workspace_root : String,
@@ -2589,7 +2585,6 @@ fn resolve_exec_bin_for_workspace(
 }
 
 ///|
-#cfg(target="native")
 fn configured_path_root(
   env_name : String,
   resolved_plan_env : Map[String, String],
@@ -2615,7 +2610,6 @@ fn configured_path_root(
 }
 
 ///|
-#cfg(target="native")
 fn wasm_module_candidate_paths(
   root : String,
   entrypoint : String,
@@ -2639,7 +2633,6 @@ fn wasm_module_candidate_paths(
 }
 
 ///|
-#cfg(target="native")
 fn resolve_wasm_module_path(
   resolved_plan_env : Map[String, String],
   workspace_root : String,
@@ -2657,7 +2650,6 @@ fn resolve_wasm_module_path(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_wasm_action_native(
   workflow_name : String,
   plan : TaskPlan,
@@ -2721,7 +2713,6 @@ async fn execute_wasm_action_native(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_node_action_native(
   workflow_name : String,
   plan : TaskPlan,
@@ -2775,7 +2766,6 @@ async fn execute_node_action_native(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_docker_action_native(
   workflow_name : String,
   plan : TaskPlan,
@@ -2910,7 +2900,6 @@ async fn execute_docker_action_native(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_job_container_node_action_native(
   workflow_name : String,
   plan : TaskPlan,
@@ -3028,7 +3017,6 @@ async fn execute_job_container_node_action_native(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_job_container_run_native(
   workflow_name : String,
   plan : TaskPlan,
@@ -3142,7 +3130,6 @@ async fn execute_job_container_run_native(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_action_plan_native(
   workflow_name : String,
   plan : TaskPlan,
@@ -3277,7 +3264,6 @@ async fn execute_action_plan_native(
 }
 
 ///|
-#cfg(target="native")
 fn default_runner_env(
   workflow_name : String,
   plan : TaskPlan,
@@ -3363,7 +3349,6 @@ fn default_runner_env(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_task_plan_native(
   workflow_name : String,
   plan : TaskPlan,
@@ -3519,7 +3504,6 @@ async fn execute_task_plan_native(
 }
 
 ///|
-#cfg(target="native")
 pub async fn execute_lowered_native(
   lowered : LoweringResult,
   workspace_root? : String = ".",
@@ -4163,23 +4147,4 @@ fn cleanup_dir_entries_by_prefix(dir : String, prefix : String) -> Unit {
       ignore(exec_remove_tree(path))
     }
   }
-}
-
-///|
-#cfg(not(target="native"))
-pub async fn execute_lowered_native(
-  lowered : LoweringResult,
-  workspace_root? : String = ".",
-  push_event? : PushEvent? = None,
-  dispatch_inputs? : Map[String, String] = {},
-  nix_mode? : String = "",
-  nix_packages? : Array[String] = [],
-) -> WorkflowRunReport {
-  ignore(lowered)
-  ignore(workspace_root)
-  ignore(push_event)
-  ignore(dispatch_inputs)
-  ignore(nix_mode)
-  ignore(nix_packages)
-  make_invalid_report(["native executor is only available on native target"])
 }

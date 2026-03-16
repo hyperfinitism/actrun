@@ -359,7 +359,6 @@ struct LocalWorkspace {
 }
 
 ///|
-#cfg(target="native")
 async fn setup_local_workspace(
   workspace_mode : String,
   source_root : String,
@@ -424,7 +423,6 @@ async fn setup_local_workspace(
 }
 
 ///|
-#cfg(target="native")
 async fn cleanup_local_workspace(workspace : LocalWorkspace) -> Unit {
   match workspace.cleanup_mode {
     "worktree" => {
@@ -3314,7 +3312,6 @@ struct DoctorCheck {
 }
 
 ///|
-#cfg(target="native")
 async fn handle_doctor_command() -> Int {
   let checks : Array[DoctorCheck] = [
     { name: "git", bin: "git", env_override: "ACTRUN_GIT_BIN", required: true },
@@ -3515,7 +3512,6 @@ async fn handle_doctor_command() -> Int {
 }
 
 ///|
-#cfg(target="native")
 async fn run_in_docker_container(options : CliOptions) -> Int {
   let docker_bin = @xsys.get_env_var("ACTRUN_CONTAINER_RUNTIME").unwrap_or(
     @xsys.get_env_var("ACTRUN_DOCKER_BIN").unwrap_or("docker"),
@@ -3699,7 +3695,6 @@ fn scan_local_action_manifest(
 }
 
 ///|
-#cfg(target="native")
 async fn read_stdin_line() -> String {
   let (code, stdout, _) = run_command(
     "sh",
@@ -4767,7 +4762,6 @@ fn print_skipped_report(workflow_name : String, run_id : String) -> Unit {
 }
 
 ///|
-#cfg(target="native")
 async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
   let config = load_actrun_config(".")
   let options = merge_config_into_options(raw_options, config)
@@ -5303,7 +5297,6 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
 }
 
 ///|
-#cfg(target="native")
 async fn main {
   let cli_args = @xsys.get_cli_args()
   if cli_args.length() <= 1 ||
@@ -5452,224 +5445,4 @@ async fn main {
   if exit_code != 0 {
     @xsys.exit(exit_code)
   }
-}
-
-///|
-#cfg(target="js")
-async fn main {
-  let cli_args = @xsys.get_cli_args()
-  if cli_args.length() <= 1 ||
-    (
-      cli_args.length() > 1 &&
-      (cli_args[1] == "--help" || cli_args[1] == "-h" || cli_args[1] == "help")
-    ) {
-    println(usage_text())
-    return
-  }
-  if cli_args.length() > 1 && cli_args[1] == "init" {
-    let exit_code = handle_init_command()
-    if exit_code != 0 {
-      @xsys.exit(exit_code)
-    }
-    return
-  }
-  if cli_args.length() > 1 && cli_args[1] == "list" {
-    let exit_code = handle_list_command(cli_args)
-    if exit_code != 0 {
-      @xsys.exit(exit_code)
-    }
-    return
-  }
-  if cli_args.length() > 1 && cli_args[1] == "workflow" {
-    if cli_args.length() < 3 {
-      print_errors(["workflow subcommand requires an action"])
-      @xsys.exit(1)
-    }
-    if cli_args[2] == "list" {
-      let parsed_workflow_args = parse_workflow_read_args(cli_args)
-      if parsed_workflow_args.errors.length() > 0 {
-        print_errors(parsed_workflow_args.errors)
-        @xsys.exit(1)
-      }
-      guard parsed_workflow_args.options is Some(workflow_options) else {
-        print_errors([usage_text()])
-        @xsys.exit(1)
-      }
-      let exit_code = handle_workflow_read_command(workflow_options)
-      if exit_code != 0 {
-        @xsys.exit(exit_code)
-      }
-      return
-    }
-    if cli_args[2] == "run" {
-      let parsed_workflow_run_args = parse_workflow_run_args(cli_args)
-      if parsed_workflow_run_args.errors.length() > 0 {
-        print_errors(parsed_workflow_run_args.errors)
-        @xsys.exit(1)
-      }
-      guard parsed_workflow_run_args.options is Some(workflow_run_options) else {
-        print_errors([usage_text()])
-        @xsys.exit(1)
-      }
-      let exit_code = handle_workflow_run_command_js(workflow_run_options)
-      if exit_code != 0 {
-        @xsys.exit(exit_code)
-      }
-      return
-    }
-    print_errors(["unknown workflow subcommand: " + cli_args[2]])
-    @xsys.exit(1)
-  }
-  if cli_args.length() > 1 && cli_args[1] == "run" {
-    let parsed_run_args = parse_run_read_args(cli_args)
-    if parsed_run_args.errors.length() > 0 {
-      print_errors(parsed_run_args.errors)
-      @xsys.exit(1)
-    }
-    guard parsed_run_args.options is Some(run_options) else {
-      print_errors([usage_text()])
-      @xsys.exit(1)
-    }
-    if run_options.action == "watch" {
-      let exit_code = handle_run_watch_command(run_options)
-      if exit_code != 0 {
-        @xsys.exit(exit_code)
-      }
-      return
-    }
-    let exit_code = handle_run_read_command(run_options)
-    if exit_code != 0 {
-      @xsys.exit(exit_code)
-    }
-    return
-  }
-  if cli_args.length() > 1 && cli_args[1] == "artifact" {
-    let parsed_artifact_args = parse_artifact_read_args(cli_args)
-    if parsed_artifact_args.errors.length() > 0 {
-      print_errors(parsed_artifact_args.errors)
-      @xsys.exit(1)
-    }
-    guard parsed_artifact_args.options is Some(artifact_options) else {
-      print_errors([usage_text()])
-      @xsys.exit(1)
-    }
-    let exit_code = handle_artifact_read_command(artifact_options)
-    if exit_code != 0 {
-      @xsys.exit(exit_code)
-    }
-    return
-  }
-  if cli_args.length() > 1 && cli_args[1] == "cache" {
-    let parsed_cache_args = parse_cache_read_args(cli_args)
-    if parsed_cache_args.errors.length() > 0 {
-      print_errors(parsed_cache_args.errors)
-      @xsys.exit(1)
-    }
-    guard parsed_cache_args.options is Some(cache_options) else {
-      print_errors([usage_text()])
-      @xsys.exit(1)
-    }
-    let exit_code = handle_cache_read_command(cache_options)
-    if exit_code != 0 {
-      @xsys.exit(exit_code)
-    }
-    return
-  }
-
-  // Shorthand: actrun <workflow.yml> is equivalent to actrun workflow run <workflow.yml>
-  let parsed_args = parse_cli_args(cli_args)
-  if parsed_args.errors.length() > 0 {
-    print_errors(parsed_args.errors)
-    @xsys.exit(1)
-  }
-  guard parsed_args.options is Some(options) else {
-    print_errors([usage_text()])
-    @xsys.exit(1)
-  }
-  let exit_code = handle_workflow_run_command_js(options)
-  if exit_code != 0 {
-    @xsys.exit(exit_code)
-  }
-}
-
-///|
-#cfg(target="js")
-async fn handle_workflow_run_command_js(raw_options : CliOptions) -> Int {
-  let config = load_actrun_config(".")
-  let options = merge_config_into_options(raw_options, config)
-  let workspace_mode = resolved_workspace_mode(options)
-  let workflow_path = options.workflow_path
-  let source_root = local_workspace_root(workflow_path)
-  let execution_root = source_root
-  let text = match read_text(workflow_path) {
-    Some(content) => content
-    None => {
-      print_errors(["failed to read " + workflow_path])
-      return 1
-    }
-  }
-  let parsed = @ar.parse_workflow_yaml(text)
-  if parsed.errors.length() > 0 {
-    print_errors(parsed.errors)
-    return 1
-  }
-  guard parsed.workflow is Some(workflow) else {
-    print_errors(["workflow parse failed"])
-    return 1
-  }
-  if options.dry_run {
-    let lowered = @ar.lower_push_workflow_in_workspace(workflow, execution_root)
-    if lowered.errors.length() > 0 {
-      for err in lowered.errors {
-        println("warning: " + err)
-      }
-    }
-    print_dry_run_plan(workflow, lowered)
-    return 0
-  }
-  // Full execution
-  let prefetch = @ar.prefetch_workflow_github_actions_native(
-    workflow, execution_root,
-  )
-  if prefetch.errors.length() > 0 {
-    print_errors(prefetch.errors)
-    return 1
-  }
-  let lowered = @ar.lower_push_workflow_in_workspace(workflow, execution_root)
-  if lowered.errors.length() > 0 {
-    print_errors(lowered.errors)
-    return 1
-  }
-  let trigger_event = @ar.new_push_event(
-    options.ref_name,
-    options.changed_paths,
-    before_sha=options.before_sha,
-    after_sha=options.after_sha,
-    repository=options.repository,
-  )
-  let raw_report = @ar.execute_lowered_native(
-    lowered,
-    workspace_root=execution_root,
-    push_event=Some(trigger_event),
-    dispatch_inputs=options.dispatch_inputs,
-    nix_mode=options.nix_mode,
-    nix_packages=options.nix_packages,
-  )
-  let report = @ar.mask_report_secrets(raw_report, @ar.collect_secret_values())
-  ignore(workspace_mode)
-  ignore(workflow_path)
-  print_report(workflow, report)
-  if report.ok { 0 } else { 1 }
-}
-
-///|
-#cfg(target="wasm")
-fn main {
-  println("actrun CLI execute is supported on native and js targets only")
-}
-
-///|
-#cfg(target="wasm-gc")
-fn main {
-  println("actrun CLI execute is supported on native and js targets only")
 }

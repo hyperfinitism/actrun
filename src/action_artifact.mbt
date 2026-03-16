@@ -419,7 +419,6 @@ fn artifact_select_upload_files(
 }
 
 ///|
-#cfg(target="native")
 fn execute_upload_artifact_native(
   plan : TaskPlan,
   workspace_root : String,
@@ -516,7 +515,6 @@ fn execute_upload_artifact_native(
 }
 
 ///|
-#cfg(target="native")
 fn execute_download_artifact_native(
   plan : TaskPlan,
   workspace_root : String,

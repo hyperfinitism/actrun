@@ -456,7 +456,6 @@ fn exec_copy_dir_contents_preserving_untracked(
 }
 
 ///|
-#cfg(target="native")
 async fn exec_git_clone_checkout(
   plan : TaskPlan,
   workspace_root : String,
@@ -733,7 +732,6 @@ async fn exec_git_clone_checkout(
 }
 
 ///|
-#cfg(target="native")
 async fn execute_builtin_checkout_native(
   action : ResolvedAction,
   plan : TaskPlan,

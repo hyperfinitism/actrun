@@ -192,7 +192,6 @@ fn normalize_cache_paths(paths : Array[String]) -> Array[String] {
 }
 
 ///|
-#cfg(target="native")
 fn execute_save_cache_native(
   plan : TaskPlan,
   workspace_root : String,
@@ -268,7 +267,6 @@ fn execute_save_cache_native(
 }
 
 ///|
-#cfg(target="native")
 fn cache_input_result_failure(
   plan : TaskPlan,
   workspace_root : String,
@@ -284,7 +282,6 @@ fn cache_input_result_failure(
 }
 
 ///|
-#cfg(target="native")
 fn restore_cache_store_native(
   workspace_root : String,
   key : String,
@@ -355,7 +352,6 @@ fn restore_cache_store_native(
 }
 
 ///|
-#cfg(target="native")
 fn execute_restore_cache_native(
   plan : TaskPlan,
   workspace_root : String,
@@ -411,7 +407,6 @@ fn execute_restore_cache_native(
 }
 
 ///|
-#cfg(target="native")
 fn execute_cache_action_native(
   plan : TaskPlan,
   workspace_root : String,
@@ -486,7 +481,6 @@ fn execute_cache_action_native(
 }
 
 ///|
-#cfg(target="native")
 fn execute_cache_post_save_native(
   plan : TaskPlan,
   workspace_root : String,
@@ -520,7 +514,6 @@ fn execute_cache_post_save_native(
 }
 
 ///|
-#cfg(target="native")
 fn execute_cache_builtin_native(
   plan : TaskPlan,
   workspace_root : String,
