@@ -26,6 +26,7 @@ struct CliOptions {
   affected : Bool
   affected_base : String
   retry : Bool
+  watch : Bool
   job_filter : String
   step_filter : String
   trigger : String
@@ -218,6 +219,7 @@ fn usage_text() -> String {
   "  --no-nix                     Disable nix wrapping even if flake.nix/shell.nix exists\n" +
   "  --nix-packages <pkgs>        Additional nix packages (space-separated)\n" +
   "  --container-runtime <name>   Container runtime: docker, podman, container, lima, nerdctl\n" +
+  "  --watch                      Watch for file changes and re-run automatically\n" +
   "  --affected [base]             Only run if files changed since base (default: last success; accepts rev like HEAD~3)\n" +
   "  --retry                      Re-run only failed jobs from the latest run\n" +
   "  --job <id>                   Run only the specified job\n" +
@@ -1884,6 +1886,7 @@ fn merge_config_into_options(
     affected: options.affected,
     affected_base: options.affected_base,
     retry: options.retry,
+    watch: options.watch,
     job_filter: options.job_filter,
     step_filter: options.step_filter,
     trigger: options.trigger,
@@ -2884,6 +2887,7 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
   let mut affected = false
   let mut affected_base = ""
   let mut retry = false
+  let mut watch = false
   let mut job_filter = ""
   let mut step_filter = ""
   let mut trigger = ""
@@ -2908,6 +2912,11 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
     }
     if arg == "--no-nix" {
       nix_mode = "off"
+      index += 1
+      continue
+    }
+    if arg == "--watch" {
+      watch = true
       index += 1
       continue
     }
@@ -3116,6 +3125,7 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
       affected,
       affected_base,
       retry,
+      watch,
       job_filter,
       step_filter,
       trigger,
@@ -5205,9 +5215,17 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
   if options.trigger.length() > 0 {
     println("trigger: using " + options.trigger + " (trigger matching skipped)")
   }
+  let effective_trigger = if options.trigger == "pull_request" {
+    match workflow.pull_request_trigger {
+      Some(pr_trigger) => pr_trigger
+      None => workflow.trigger
+    }
+  } else {
+    workflow.trigger
+  }
   if options.trigger.length() == 0 &&
     should_check_trigger(options) &&
-    not(@ar.matches_push_trigger(workflow.trigger, trigger_event)) {
+    not(@ar.matches_push_trigger(effective_trigger, trigger_event)) {
     let skipped_run_dir = persist_run_record(run_root, {
       run_id: "",
       workflow_name: workflow.name,
@@ -5251,9 +5269,9 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
         patterns = config.affected.get(basename).unwrap_or([])
       }
     }
-    // Fallback to on:push:paths from the workflow trigger
-    if patterns.length() == 0 && workflow.trigger.paths.length() > 0 {
-      patterns = workflow.trigger.paths
+    // Fallback to on:push:paths or on:pull_request:paths from the workflow trigger
+    if patterns.length() == 0 && effective_trigger.paths.length() > 0 {
+      patterns = effective_trigger.paths
       println(
         "affected: using on.push.paths from workflow (" +
         patterns.join(", ") +
@@ -5568,10 +5586,18 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
     return 1
   }
 
+  let effective_event_name = if options.trigger == "pull_request" {
+    "pull_request"
+  } else if options.trigger.length() > 0 {
+    options.trigger
+  } else {
+    "push"
+  }
   let raw_report = @ar.execute_lowered_native(
     lowered,
     workspace_root=execution_root,
     push_event=Some(trigger_event),
+    event_name=effective_event_name,
     dispatch_inputs=options.dispatch_inputs,
     nix_mode=options.nix_mode,
     nix_packages=options.nix_packages,
@@ -5613,10 +5639,43 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
     Some(ws) => cleanup_local_workspace(ws)
     None => ()
   }
-  if not(report.ok) {
+  if not(report.ok) && not(options.watch) {
     return 1
   }
+
+  // --watch: poll for changes and re-run
+  if options.watch {
+    let mut last_snapshot = git_file_snapshot()
+    while true {
+      ignore(run_command("sleep", ["2"]))
+      let current_snapshot = git_file_snapshot()
+      if current_snapshot == last_snapshot {
+        continue
+      }
+      last_snapshot = current_snapshot
+      // Debounce: wait a bit more then re-check
+      ignore(run_command("sleep", ["1"]))
+      let debounced = git_file_snapshot()
+      if debounced != current_snapshot {
+        last_snapshot = debounced
+        continue
+      }
+      println("\n--- watch: changes detected, re-running ---\n")
+      let rerun_exit = handle_workflow_run_command({
+        ..raw_options,
+        watch: false,
+      })
+      ignore(rerun_exit)
+    }
+  }
   0
+}
+
+///|
+async fn git_file_snapshot() -> String {
+  let (_, stdout, _) = run_command("git", ["status", "--porcelain"], cwd=".")
+  let (_, diff_stdout, _) = run_command("git", ["diff", "--stat"], cwd=".")
+  stdout + diff_stdout
 }
 
 ///|

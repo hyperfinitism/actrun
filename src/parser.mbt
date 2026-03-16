@@ -923,6 +923,7 @@ fn parse_concurrency(
 ///|
 priv struct ParsedTriggers {
   push : PushTrigger
+  pull_request : PushTrigger?
   workflow_call : Bool
   workflow_call_spec : WorkflowCallSpec?
 }
@@ -1133,17 +1134,25 @@ fn parse_push_trigger_value(
 fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
   match value {
     Some(Str(event_name)) =>
-      if event_name == "push" ||
-        event_name == "pull_request" ||
+      if event_name == "push" {
+        {
+          push: new_push_trigger(),
+          pull_request: None,
+          workflow_call: false,
+          workflow_call_spec: None,
+        }
+      } else if event_name == "pull_request" ||
         event_name == "pull_request_target" {
         {
           push: new_push_trigger(),
+          pull_request: Some(new_push_trigger()),
           workflow_call: false,
           workflow_call_spec: None,
         }
       } else if event_name == "workflow_call" {
         {
           push: new_push_trigger(),
+          pull_request: None,
           workflow_call: true,
           workflow_call_spec: Some(new_workflow_call_spec()),
         }
@@ -1151,26 +1160,34 @@ fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
         errors.push("only push and workflow_call triggers are supported in MVP")
         {
           push: new_push_trigger(),
+          pull_request: None,
           workflow_call: false,
           workflow_call_spec: None,
         }
       }
     Some(Seq(items)) => {
       let mut has_push = false
+      let mut has_pull_request = false
       let mut workflow_call = false
       for item in items {
-        if item is Str("push") ||
-          item is Str("pull_request") ||
-          item is Str("pull_request_target") {
+        if item is Str("push") {
           has_push = true
+        }
+        if item is Str("pull_request") || item is Str("pull_request_target") {
+          has_pull_request = true
         }
         if item is Str("workflow_call") {
           workflow_call = true
         }
       }
-      if has_push || workflow_call {
+      if has_push || has_pull_request || workflow_call {
         {
           push: new_push_trigger(),
+          pull_request: if has_pull_request {
+            Some(new_push_trigger())
+          } else {
+            None
+          },
           workflow_call,
           workflow_call_spec: if workflow_call {
             Some(new_workflow_call_spec())
@@ -1182,6 +1199,7 @@ fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
         errors.push("only push and workflow_call triggers are supported in MVP")
         {
           push: new_push_trigger(),
+          pull_request: None,
           workflow_call: false,
           workflow_call_spec: None,
         }
@@ -1191,6 +1209,7 @@ fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
       errors.push("on must define push or workflow_call")
       {
         push: new_push_trigger(),
+        pull_request: None,
         workflow_call: false,
         workflow_call_spec: None,
       }
@@ -1199,6 +1218,7 @@ fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
       errors.push("on is required")
       {
         push: new_push_trigger(),
+        pull_request: None,
         workflow_call: false,
         workflow_call_spec: None,
       }
@@ -1206,14 +1226,15 @@ fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
     Some(Obj(fields)) => {
       let push = match yaml_obj_get(fields, "push") {
         Some(push_value) => parse_push_trigger_value(push_value, errors)
+        None => new_push_trigger()
+      }
+      let pull_request : PushTrigger? = match
+        yaml_obj_get(fields, "pull_request") {
+        Some(pr_value) => Some(parse_push_trigger_value(pr_value, errors))
         None =>
-          match yaml_obj_get(fields, "pull_request") {
-            Some(pr_value) => parse_push_trigger_value(pr_value, errors)
-            None =>
-              match yaml_obj_get(fields, "pull_request_target") {
-                Some(prt_value) => parse_push_trigger_value(prt_value, errors)
-                None => new_push_trigger()
-              }
+          match yaml_obj_get(fields, "pull_request_target") {
+            Some(prt_value) => Some(parse_push_trigger_value(prt_value, errors))
+            None => None
           }
       }
       let workflow_call = parse_workflow_call_trigger(
@@ -1228,6 +1249,7 @@ fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
       }
       {
         push,
+        pull_request,
         workflow_call: workflow_call is Some(_),
         workflow_call_spec: workflow_call,
       }
@@ -1844,6 +1866,7 @@ pub fn parse_workflow_yaml(text : String) -> WorkflowParseResult {
       "run-name",
     ).unwrap_or(""),
     trigger=parsed_trigger.push,
+    pull_request_trigger=parsed_trigger.pull_request,
     workflow_call=parsed_trigger.workflow_call,
     workflow_call_spec=parsed_trigger.workflow_call_spec,
     permissions=parse_permissions(

@@ -354,6 +354,7 @@ pub struct WorkflowSpec {
   name : String
   run_name : String
   trigger : PushTrigger
+  pull_request_trigger : PushTrigger?
   workflow_call : Bool
   workflow_call_spec : WorkflowCallSpec?
   permissions : PermissionsSpec?
@@ -529,6 +530,7 @@ pub fn new_workflow(
   jobs : Array[JobSpec],
   run_name? : String = "",
   trigger? : PushTrigger = new_push_trigger(),
+  pull_request_trigger? : PushTrigger? = None,
   workflow_call? : Bool = false,
   workflow_call_spec? : WorkflowCallSpec? = None,
   permissions? : PermissionsSpec? = None,
@@ -540,6 +542,7 @@ pub fn new_workflow(
     name,
     run_name,
     trigger,
+    pull_request_trigger,
     workflow_call,
     workflow_call_spec,
     permissions,

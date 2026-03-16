@@ -1006,7 +1006,13 @@ fn push_event_ref(push_event : PushEvent?) -> String {
 }
 
 ///|
-fn push_event_name(push_event : PushEvent?) -> String {
+fn push_event_name(
+  push_event : PushEvent?,
+  event_name? : String = "push",
+) -> String {
+  if event_name.length() > 0 {
+    return event_name
+  }
   match push_event {
     Some(_) => "push"
     None => "push"
@@ -1038,6 +1044,7 @@ fn github_context(
   plan : TaskPlan,
   workspace_root : String,
   push_event : PushEvent?,
+  event_name? : String = "push",
 ) -> Map[String, String] {
   {
     "action": github_action_value(plan),
@@ -1045,7 +1052,7 @@ fn github_context(
       Some(event) => event.actor
       None => ""
     },
-    "event_name": push_event_name(push_event),
+    "event_name": push_event_name(push_event, event_name~),
     "workflow": workflow_name,
     "job": plan.job_id,
     "workspace": absolute_exec_path(resolve_task_cwd(workspace_root, "")),
@@ -3497,6 +3504,7 @@ pub async fn execute_lowered_native(
   lowered : LoweringResult,
   workspace_root? : String = ".",
   push_event? : PushEvent? = None,
+  event_name? : String = "push",
   dispatch_inputs? : Map[String, String] = {},
   nix_mode? : String = "",
   nix_packages? : Array[String] = [],
@@ -3613,6 +3621,7 @@ pub async fn execute_lowered_native(
                 plan,
                 workspace_root,
                 push_event,
+                event_name~,
               )
               let vars_ctx = runner_vars_context()
               let runner_ctx = runner_context(plan, workspace_root)
@@ -3718,6 +3727,7 @@ pub async fn execute_lowered_native(
               plan,
               workspace_root,
               push_event,
+              event_name~,
             )
             let job_ctx = plan_job_context(
               lowered.plan.job_services,
@@ -3836,6 +3846,7 @@ pub async fn execute_lowered_native(
                     plan,
                     workspace_root,
                     push_event,
+                    event_name~,
                   )
                   let job_ctx = plan_job_context(
                     lowered.plan.job_services,
@@ -3905,6 +3916,7 @@ pub async fn execute_lowered_native(
                 plan,
                 workspace_root,
                 push_event,
+                event_name~,
               )
               let vars_ctx = runner_vars_context()
               let runner_ctx = runner_context(plan, workspace_root)
