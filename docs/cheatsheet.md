@@ -52,9 +52,14 @@ actrun ci.yml
 # Only run if relevant files changed since last success
 actrun ci.yml --affected
 
-# Requires actrun.toml:
-#   [affected.ci.yml]
+# Compare against a specific revision (instead of last success)
+actrun ci.yml --affected HEAD~3
+actrun ci.yml --affected abc123
+
+# Requires actrun.toml or on:push:paths in workflow:
+#   [affected."ci.yml"]
 #   patterns = ["src/**", "package.json"]
+# If no patterns configured, falls back to on:push:paths from the workflow
 ```
 
 ## Retry Failed
@@ -198,10 +203,10 @@ trust_actions = true
 includes = [".github/workflows/*.yml", "ci/**/*.yaml"]
 
 # Affected file patterns per workflow
-[affected.ci.yml]
+[affected."ci.yml"]
 patterns = ["src/**", "package.json"]
 
-[affected.lint.yml]
+[affected."lint.yml"]
 patterns = ["src/**", "*.config.*"]
 ```
 

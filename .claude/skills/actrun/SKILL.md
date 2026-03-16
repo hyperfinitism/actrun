@@ -118,7 +118,7 @@ trust_actions = true
 # container_runtime = "docker"
 includes = [".github/workflows/*.yml"]
 
-[affected.ci.yml]
+[affected."ci.yml"]
 patterns = ["src/**", "package.json"]
 ```
 

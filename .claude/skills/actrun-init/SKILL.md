@@ -138,13 +138,13 @@ local_skip_actions = [
 モノレポや大規模プロジェクトで有用:
 
 ```toml
-[affected.ci.yml]
+[affected."ci.yml"]
 patterns = ["src/**", "package.json", "pnpm-lock.yaml"]
 
-[affected.lint.yml]
+[affected."lint.yml"]
 patterns = ["src/**", "*.config.*"]
 
-[affected.docs.yml]
+[affected."docs.yml"]
 patterns = ["docs/**", "*.md"]
 ```
 

@@ -141,7 +141,7 @@ actrun ci.yml --retry
 `actrun.toml` でワークフローごとにパターンを定義する。
 
 ```toml
-[affected.ci.yml]
+[affected."ci.yml"]
 patterns = ["src/**", "package.json"]
 ```
 

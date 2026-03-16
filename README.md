@@ -75,7 +75,7 @@ nix_packages = ["python312", "jq"]
 container_runtime = "docker"
 
 # Affected file patterns per workflow
-# [affected.ci.yml]
+# [affected."ci.yml"]
 # patterns = ["src/**", "package.json"]
 ```
 

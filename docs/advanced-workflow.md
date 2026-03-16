@@ -9,13 +9,13 @@ Like turborepo and nx, actrun can skip workflows when no relevant files have cha
 Define file patterns per workflow in `actrun.toml`:
 
 ```toml
-[affected.ci.yml]
+[affected."ci.yml"]
 patterns = ["src/**", "*.toml", "Cargo.lock"]
 
-[affected.lint.yml]
+[affected."lint.yml"]
 patterns = ["src/**", "*.config.js"]
 
-[affected.docs.yml]
+[affected."docs.yml"]
 patterns = ["docs/**", "README.md"]
 ```
 
@@ -24,15 +24,24 @@ The key after `affected.` matches the workflow filename (basename, not full path
 ### Usage
 
 ```bash
+# Compare against last successful run
 actrun workflow run .github/workflows/ci.yml --affected
+
+# Compare against a specific revision
+actrun workflow run .github/workflows/ci.yml --affected HEAD~3
+actrun workflow run .github/workflows/ci.yml --affected abc123
 ```
+
+### Pattern Fallback
+
+If no `[affected."<workflow>"]` section is defined in `actrun.toml`, actrun falls back to the `on.push.paths` patterns from the workflow file itself. This means many workflows work with `--affected` out of the box.
 
 ### How It Works
 
-1. Find the latest **successful** run for this workflow in the run store
-2. Get the `after_sha` (commit hash) from that run record
-3. Compute changed files: `git diff --name-only <last_sha> HEAD` + uncommitted/untracked files
-4. If **any** changed file matches the configured patterns, run the workflow
+1. Find the base revision: use the explicit rev argument (e.g. `HEAD~3`), or find the latest **successful** run's `after_sha`
+2. Compute changed files: `git diff --name-only <base_rev> HEAD` + uncommitted/untracked files
+3. Resolve patterns: use `actrun.toml` `[affected."<workflow>"]` patterns, or fall back to `on.push.paths` from the workflow
+4. If **any** changed file matches the patterns, run the workflow
 5. If **no** files match, skip with a message
 
 ```
@@ -192,12 +201,12 @@ trust_actions = true
 # container_runtime = "docker"
 
 # Affected file patterns per workflow
-[affected.ci.yml]
+[affected."ci.yml"]
 patterns = ["src/**", "package.json", "pnpm-lock.yaml"]
 
-[affected.lint.yml]
+[affected."lint.yml"]
 patterns = ["src/**", "*.config.*"]
 
-[affected.docs.yml]
+[affected."docs.yml"]
 patterns = ["docs/**", "*.md"]
 ```
