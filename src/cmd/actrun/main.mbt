@@ -3716,6 +3716,33 @@ async fn read_stdin_line() -> String {
 }
 
 ///|
+fn is_workspace_modifying_action(uses : String) -> Bool {
+  uses.has_prefix("actions/checkout") ||
+  uses.has_prefix("actions/cache/restore") ||
+  (uses.has_prefix("actions/cache") && not(uses.has_prefix("actions/cache/save")))
+}
+
+///|
+fn collect_workspace_modifying_steps(
+  workflow : @ar.WorkflowSpec,
+) -> Array[String] {
+  let result : Array[String] = []
+  for job in workflow.jobs {
+    for step in job.steps {
+      match step.uses {
+        Some(uses) =>
+          if is_workspace_modifying_action(uses) {
+            let label = if step.name.length() > 0 { step.name } else { uses }
+            result.push(job.id + "/" + label)
+          }
+        None => ()
+      }
+    }
+  }
+  result
+}
+
+///|
 fn print_dry_run_plan(
   workflow : @ar.WorkflowSpec,
   lowered : @ar.LoweringResult,
@@ -5173,6 +5200,34 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
       }
       println("")
       println("Use --trust to skip this prompt, or Ctrl+C to cancel.")
+      println("Continue? [y/N]")
+      let answer = read_stdin_line()
+      let trimmed = answer.trim(chars=" \t\r\n").to_lower()
+      if trimmed != "y" && trimmed != "yes" {
+        println("Aborted.")
+        return 1
+      }
+    }
+  }
+
+  // Warn when local mode will modify workspace files
+  if workspace_mode == "local" &&
+    not(options.trust_actions) &&
+    not(trust_env) &&
+    not(options.dry_run) {
+    let modifying = collect_workspace_modifying_steps(filtered_workflow)
+    if modifying.length() > 0 {
+      println(
+        "Warning: running in local mode will modify files in your working directory.",
+      )
+      println("The following steps write to the workspace:")
+      for desc in modifying {
+        println("  " + desc)
+      }
+      println("")
+      println(
+        "Use --worktree or --tmp for isolated execution, --skip-action to skip, or --trust to suppress this prompt.",
+      )
       println("Continue? [y/N]")
       let answer = read_stdin_line()
       let trimmed = answer.trim(chars=" \t\r\n").to_lower()

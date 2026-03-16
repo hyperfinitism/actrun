@@ -354,6 +354,42 @@ fn exec_remove_all_tracked_files(
 }
 
 ///|
+/// Safely replace .git in dst with the one from src.
+/// Copies new .git first, then removes old — ensures .git always exists.
+fn exec_safe_replace_git(src : String, dst : String) -> Bool {
+  let new_git = dst + "/.git"
+  let backup_git = dst + "/.git.actrun-backup"
+  // Move current .git to backup
+  if @xfs.path_exists(new_git) {
+    if not(exec_copy_tree(new_git, backup_git)) {
+      return false
+    }
+  }
+  // Copy new .git from source
+  if not(exec_remove_tree(new_git)) {
+    // Restore backup on failure
+    if @xfs.path_exists(backup_git) {
+      ignore(exec_remove_tree(new_git))
+      ignore(exec_copy_tree(backup_git, new_git))
+      ignore(exec_remove_tree(backup_git))
+    }
+    return false
+  }
+  if not(exec_copy_tree(src + "/.git", new_git)) {
+    // Restore backup on failure
+    if @xfs.path_exists(backup_git) {
+      ignore(exec_remove_tree(new_git))
+      ignore(exec_copy_tree(backup_git, new_git))
+    }
+    ignore(exec_remove_tree(backup_git))
+    return false
+  }
+  // Success — remove backup
+  ignore(exec_remove_tree(backup_git))
+  true
+}
+
+///|
 fn exec_copy_dir_contents_clean_tracked(
   src : String,
   dst : String,
@@ -366,11 +402,8 @@ fn exec_copy_dir_contents_clean_tracked(
   if not(exec_remove_all_tracked_files(dst, current_tracked)) {
     return false
   }
-  // Replace .git with the cloned one
-  if not(exec_remove_tree(dst + "/.git")) {
-    return false
-  }
-  if not(exec_copy_tree(src + "/.git", dst + "/.git")) {
+  // Safely replace .git with the cloned one
+  if not(exec_safe_replace_git(src, dst)) {
     return false
   }
   // Copy all non-.git entries from clone
@@ -400,10 +433,8 @@ fn exec_copy_dir_contents_preserving_untracked(
   if not(ensure_exec_dir_recursive(dst)) {
     return false
   }
-  if not(exec_remove_tree(dst + "/.git")) {
-    return false
-  }
-  if not(exec_copy_tree(src + "/.git", dst + "/.git")) {
+  // Safely replace .git with the cloned one
+  if not(exec_safe_replace_git(src, dst)) {
     return false
   }
   if not(exec_remove_missing_tracked_files(dst, current_tracked, next_tracked)) {

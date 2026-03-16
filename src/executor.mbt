@@ -2458,6 +2458,10 @@ fn exec_clear_dir_contents(path : String) -> Bool {
     value => value
   }
   for entry in entries {
+    // Never delete .git — it must be replaced explicitly, not cleared
+    if entry == ".git" {
+      continue
+    }
     if not(exec_remove_tree(path + "/" + entry)) {
       return false
     }
