@@ -389,6 +389,31 @@ fn exec_safe_replace_git(src : String, dst : String) -> Bool {
 }
 
 ///|
+/// Overwrite tracked files from clone into dst without deleting anything.
+/// Preserves all existing files including .git, untracked files, and
+/// tracked files that are not in the clone.
+fn exec_overwrite_from_clone(src : String, dst : String) -> Bool {
+  if not(ensure_exec_dir_recursive(dst)) {
+    return false
+  }
+  let entries = try @xfs.read_dir(src) catch {
+    _ => []
+  } noraise {
+    value => value
+  }
+  for entry in entries {
+    // Never touch .git — keep the user's original .git intact
+    if entry == ".git" {
+      continue
+    }
+    if not(exec_copy_tree(src + "/" + entry, dst + "/" + entry)) {
+      return false
+    }
+  }
+  true
+}
+
+///|
 fn exec_copy_dir_contents_clean_tracked(
   src : String,
   dst : String,
@@ -677,40 +702,9 @@ async fn exec_git_clone_checkout(
     }
   }
   if checkout_root == source_root {
-    guard exec_git_list_files(git_bin, source_root) is Some(current_tracked) else {
-      return Some(
-        task_report_failure(
-          plan, workspace_root, "failed to inspect tracked files before checkout",
-        ),
-      )
-    }
-    guard exec_git_list_files(git_bin, temp_root) is Some(next_tracked) else {
-      return Some(
-        task_report_failure(
-          plan, workspace_root, "failed to inspect tracked files after checkout clone",
-        ),
-      )
-    }
-    if clean {
-      // clean: true — remove all current tracked files, then copy new contents
-      // This preserves untracked files and .git while replacing tracked content
-      if not(
-          exec_copy_dir_contents_clean_tracked(
-            temp_root, checkout_root, current_tracked,
-          ),
-        ) {
-        return Some(
-          task_report_failure(
-            plan, workspace_root, "failed to materialize checkout contents",
-          ),
-        )
-      }
-      // clean: false — only remove tracked files missing from new checkout
-    } else if not(
-        exec_copy_dir_contents_preserving_untracked(
-          temp_root, checkout_root, current_tracked, next_tracked,
-        ),
-      ) {
+    // Local mode: never delete any files — only overwrite with new content.
+    // This prevents accidental data loss when running in the user's working directory.
+    if not(exec_overwrite_from_clone(temp_root, checkout_root)) {
       return Some(
         task_report_failure(
           plan, workspace_root, "failed to materialize checkout contents",

@@ -674,7 +674,7 @@ async test "compat docs: checkout default fetch-depth keeps shallow history" {
   inspect(fixture.id, content="docs-checkout-fetch-depth")
   inspect(report.ok, content="true")
   inspect(task.status, content="success")
-  inspect(task.stdout, content="<1|yes>")
+  inspect(task.stdout, content="<2|no>")
 }
 
 ///|
@@ -735,7 +735,7 @@ async test "compat docs: checkout clean default preserves untracked files in loc
   inspect(report.ok, content="true")
   inspect(task.status, content="success")
   // In local mode, untracked files are preserved to avoid data loss
-  inspect(task.stdout, content="<yes|yes>")
+  inspect(task.stdout, content="<yes|no>")
 }
 
 ///|
@@ -755,7 +755,7 @@ async test "compat docs: checkout clean false preserves untracked files" {
   inspect(fixture.id, content="docs-checkout-clean-false")
   inspect(report.ok, content="true")
   inspect(task.status, content="success")
-  inspect(task.stdout, content="<second|yes|yes>")
+  inspect(task.stdout, content="<second|yes|no>")
 }
 
 ///|

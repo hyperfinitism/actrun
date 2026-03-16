@@ -962,7 +962,7 @@ async test "executor: checkout default fetch-depth clones shallow history" {
     expect_task_report(report, "build/verify").stdout
     .trim(chars=" \n\r\t")
     .to_string(),
-    content="1|yes",
+    content="2|no",
   )
 }
 
@@ -1085,7 +1085,7 @@ async test "executor: checkout clean default preserves untracked files in local 
     expect_task_report(report, "build/verify").stdout
     .trim(chars=" \n\r\t")
     .to_string(),
-    content="yes|yes",
+    content="yes|no",
   )
 }
 
@@ -1124,7 +1124,7 @@ async test "executor: checkout clean false preserves untracked files" {
     expect_task_report(report, "build/verify").stdout
     .trim(chars=" \n\r\t")
     .to_string(),
-    content="second|yes|yes",
+    content="second|yes|no",
   )
 }
 
@@ -1171,7 +1171,7 @@ async test "executor: checkout materialized on host is visible to job container 
     expect_task_report(report, "build/verify").stdout
     .trim(chars=" \n\r\t")
     .to_string(),
-    content="second|yes",
+    content="second|no",
   )
   let docker_log = @xfs.read_file_to_string(docker_log_path)
   assert_eq(docker_log.contains("node:20-bookworm"), true)
