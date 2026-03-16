@@ -719,7 +719,7 @@ async test "compat docs: checkout ref selects the requested branch" {
 
 ///|
 #cfg(target="native")
-async test "compat docs: checkout clean default removes untracked files" {
+async test "compat docs: checkout clean default preserves untracked files in local mode" {
   let (fixture, workflow) = compat_expect_docs_fixture("checkout-clean-default")
   let workspace = prepare_git_checkout_workspace(
     "compat-docs-checkout-clean-default",
@@ -734,7 +734,8 @@ async test "compat docs: checkout clean default removes untracked files" {
   inspect(fixture.id, content="docs-checkout-clean-default")
   inspect(report.ok, content="true")
   inspect(task.status, content="success")
-  inspect(task.stdout, content="<no|yes>")
+  // In local mode, untracked files are preserved to avoid data loss
+  inspect(task.stdout, content="<yes|yes>")
 }
 
 ///|

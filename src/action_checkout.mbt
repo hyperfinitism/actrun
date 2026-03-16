@@ -341,6 +341,56 @@ fn exec_remove_missing_tracked_files(
 }
 
 ///|
+fn exec_remove_all_tracked_files(
+  destination : String,
+  current_tracked : String,
+) -> Bool {
+  for relative in split_nonempty_lines(current_tracked) {
+    if not(exec_remove_tree(destination + "/" + relative)) {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn exec_copy_dir_contents_clean_tracked(
+  src : String,
+  dst : String,
+  current_tracked : String,
+) -> Bool {
+  if not(ensure_exec_dir_recursive(dst)) {
+    return false
+  }
+  // Remove all current tracked files (clean mode)
+  if not(exec_remove_all_tracked_files(dst, current_tracked)) {
+    return false
+  }
+  // Replace .git with the cloned one
+  if not(exec_remove_tree(dst + "/.git")) {
+    return false
+  }
+  if not(exec_copy_tree(src + "/.git", dst + "/.git")) {
+    return false
+  }
+  // Copy all non-.git entries from clone
+  let entries = try @xfs.read_dir(src) catch {
+    _ => []
+  } noraise {
+    value => value
+  }
+  for entry in entries {
+    if entry == ".git" {
+      continue
+    }
+    if not(exec_copy_tree(src + "/" + entry, dst + "/" + entry)) {
+      return false
+    }
+  }
+  true
+}
+
+///|
 fn exec_copy_dir_contents_preserving_untracked(
   src : String,
   dst : String,
@@ -596,7 +646,7 @@ async fn exec_git_clone_checkout(
       )
     }
   }
-  if not(clean) && checkout_root == source_root {
+  if checkout_root == source_root {
     guard exec_git_list_files(git_bin, source_root) is Some(current_tracked) else {
       return Some(
         task_report_failure(
@@ -611,16 +661,33 @@ async fn exec_git_clone_checkout(
         ),
       )
     }
-    if not(
-        exec_copy_dir_contents_preserving_untracked(
-          temp_root, checkout_root, current_tracked, next_tracked,
-        ),
-      ) {
-      return Some(
-        task_report_failure(
-          plan, workspace_root, "failed to materialize checkout contents",
-        ),
-      )
+    if clean {
+      // clean: true — remove all current tracked files, then copy new contents
+      // This preserves untracked files and .git while replacing tracked content
+      if not(
+          exec_copy_dir_contents_clean_tracked(
+            temp_root, checkout_root, current_tracked,
+          ),
+        ) {
+        return Some(
+          task_report_failure(
+            plan, workspace_root, "failed to materialize checkout contents",
+          ),
+        )
+      }
+    } else {
+      // clean: false — only remove tracked files missing from new checkout
+      if not(
+          exec_copy_dir_contents_preserving_untracked(
+            temp_root, checkout_root, current_tracked, next_tracked,
+          ),
+        ) {
+        return Some(
+          task_report_failure(
+            plan, workspace_root, "failed to materialize checkout contents",
+          ),
+        )
+      }
     }
     return None
   }

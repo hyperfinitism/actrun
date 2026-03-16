@@ -1053,7 +1053,7 @@ async test "executor: checkout ref selects requested branch" {
 
 ///|
 #cfg(target="native")
-async test "executor: checkout clean default removes untracked files" {
+async test "executor: checkout clean default preserves untracked files in local mode" {
   let workspace = prepare_git_checkout_workspace(
     "executor-checkout-clean-default",
   )
@@ -1077,6 +1077,7 @@ async test "executor: checkout clean default removes untracked files" {
   let lowered = lower_push_workflow(workflow)
   inspect(lowered.errors, content="[]")
 
+  // In local mode, untracked files are preserved to avoid data loss
   let report = execute_lowered_native(lowered, workspace_root=workspace)
   inspect(report.ok, content="true")
   inspect(report.state, content="completed")
@@ -1084,7 +1085,7 @@ async test "executor: checkout clean default removes untracked files" {
     expect_task_report(report, "build/verify").stdout
     .trim(chars=" \n\r\t")
     .to_string(),
-    content="no|yes",
+    content="yes|yes",
   )
 }
 
