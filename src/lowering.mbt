@@ -1313,20 +1313,9 @@ fn expand_reusable_workflows_in_workspace(
             "job '\{job.id}' reusable workflow caller outputs are not supported in MVP",
           )
         }
-        match job.permissions {
-          Some(spec) if spec.values.length() > 0 =>
-            errors.push(
-              "job '\{job.id}' reusable workflow permissions are not supported in MVP",
-            )
-          _ => ()
-        }
-        match job.concurrency {
-          Some(_) =>
-            errors.push(
-              "job '\{job.id}' reusable workflow concurrency is not supported in MVP",
-            )
-          None => ()
-        }
+        // permissions and concurrency silently ignored for local execution
+        ignore(job.permissions)
+        ignore(job.concurrency)
         if job.container_image is Some(image) {
           errors.push(
             "job '\{job.id}' reusable workflow container is not supported in MVP: \{image}",
@@ -1428,20 +1417,9 @@ fn expand_reusable_workflows_in_workspace(
                     )
                   }
                 }
-                match callee.permissions {
-                  Some(spec) if spec.values.length() > 0 =>
-                    errors.push(
-                      "job '\{job.id}' reusable workflow permissions are not supported in MVP: \{path}",
-                    )
-                  _ => ()
-                }
-                match callee.concurrency {
-                  Some(_) =>
-                    errors.push(
-                      "job '\{job.id}' reusable workflow concurrency is not supported in MVP: \{path}",
-                    )
-                  None => ()
-                }
+                // permissions and concurrency silently ignored
+                ignore(callee.permissions)
+                ignore(callee.concurrency)
                 let callee_ids : Map[String, String] = {}
                 for callee_job in callee.jobs {
                   callee_ids[callee_job.id] = reusable_job_id(
@@ -2668,15 +2646,9 @@ pub fn lower_push_workflow_in_workspace(
   for job_id, output_targets in reusable_expansion.alias_output_targets {
     job_virtual_output_targets[job_id] = output_targets
   }
-  match workflow.permissions {
-    Some(spec) if spec.values.length() > 0 =>
-      errors.push("workflow permissions are not supported in MVP")
-    _ => ()
-  }
-  match workflow.concurrency {
-    Some(_) => errors.push("workflow concurrency is not supported in MVP")
-    None => ()
-  }
+  // permissions and concurrency are silently ignored for local execution
+  ignore(workflow.permissions)
+  ignore(workflow.concurrency)
   let expanded_specs : Array[JobSpec] = []
   for expanded in expanded_jobs {
     expanded_specs.push(expanded.job)
@@ -2722,16 +2694,9 @@ pub fn lower_push_workflow_in_workspace(
         "job '\{job.id}' reusable workflow is not supported in MVP: \{path}",
       )
     }
-    match job.permissions {
-      Some(spec) if spec.values.length() > 0 =>
-        errors.push("job '\{job.id}' permissions are not supported in MVP")
-      _ => ()
-    }
-    match job.concurrency {
-      Some(_) =>
-        errors.push("job '\{job.id}' concurrency is not supported in MVP")
-      None => ()
-    }
+    // permissions and concurrency are silently ignored for local execution
+    ignore(job.permissions)
+    ignore(job.concurrency)
     validate_job_if(job.id, job.if_condition, errors)
     for need in job.needs {
       if known_jobs.get(need) is None {

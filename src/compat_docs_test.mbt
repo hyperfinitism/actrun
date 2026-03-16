@@ -124,7 +124,7 @@ test "compat docs: lower jobs if fixture" {
 }
 
 ///|
-test "compat docs: parse and reject permissions fixture" {
+test "compat docs: permissions are parsed and silently ignored" {
   let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
     "permissions-parse",
   )
@@ -138,14 +138,12 @@ test "compat docs: parse and reject permissions fixture" {
     workflow.jobs[0].permissions.unwrap().values.get("contents").unwrap_or(""),
     content="read",
   )
-  inspect(
-    lowered.errors,
-    content="[\"workflow permissions are not supported in MVP\", \"job 'build' permissions are not supported in MVP\"]",
-  )
+  // permissions are silently ignored for local execution
+  inspect(lowered.errors, content="[]")
 }
 
 ///|
-test "compat docs: parse and reject concurrency fixture" {
+test "compat docs: concurrency is parsed and silently ignored" {
   let (fixture, workflow, lowered) = compat_expect_lowered_docs_fixture(
     "concurrency-parse",
   )
@@ -164,10 +162,8 @@ test "compat docs: parse and reject concurrency fixture" {
     workflow.jobs[0].concurrency.unwrap().cancel_in_progress.unwrap_or(""),
     content="true",
   )
-  inspect(
-    lowered.errors,
-    content="[\"workflow concurrency is not supported in MVP\", \"job 'build' concurrency is not supported in MVP\"]",
-  )
+  // concurrency is silently ignored for local execution
+  inspect(lowered.errors, content="[]")
 }
 
 ///|

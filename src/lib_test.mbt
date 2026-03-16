@@ -1601,7 +1601,7 @@ test "lowering: matrix jobs retain fail-fast metadata" {
 }
 
 ///|
-test "parser/lowering: workflow and job permissions are parsed and rejected in MVP" {
+test "parser/lowering: workflow and job permissions are silently ignored" {
   let workflow = new_workflow(
     "ci",
     [
@@ -1618,14 +1618,11 @@ test "parser/lowering: workflow and job permissions are parsed and rejected in M
 
   let result = lower_push_workflow(workflow)
 
-  inspect(
-    result.errors,
-    content="[\"workflow permissions are not supported in MVP\", \"job 'build' permissions are not supported in MVP\"]",
-  )
+  inspect(result.errors, content="[]")
 }
 
 ///|
-test "parser/lowering: workflow and job concurrency are parsed and rejected in MVP" {
+test "parser/lowering: workflow and job concurrency are silently ignored" {
   let workflow = new_workflow(
     "ci",
     [
@@ -1647,10 +1644,7 @@ test "parser/lowering: workflow and job concurrency are parsed and rejected in M
 
   let result = lower_push_workflow(workflow)
 
-  inspect(
-    result.errors,
-    content="[\"workflow concurrency is not supported in MVP\", \"job 'build' concurrency is not supported in MVP\"]",
-  )
+  inspect(result.errors, content="[]")
 }
 
 ///|
