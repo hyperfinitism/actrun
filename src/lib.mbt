@@ -416,6 +416,46 @@ pub fn filter_workflow_steps(
 }
 
 ///|
+pub fn override_workflow_steps(
+  workflow : WorkflowSpec,
+  overrides : Map[String, String],
+) -> WorkflowSpec {
+  if overrides.length() == 0 {
+    return workflow
+  }
+  let result_jobs : Array[JobSpec] = []
+  for job in workflow.jobs {
+    let result_steps : Array[StepSpec] = []
+    for step in job.steps {
+      match step.uses {
+        Some(uses) => {
+          let mut matched_script : String? = None
+          for pattern, script in overrides {
+            if uses.contains(pattern) {
+              matched_script = Some(script)
+              break
+            }
+          }
+          match matched_script {
+            Some(script) =>
+              result_steps.push({
+                ..step,
+                uses: None,
+                run: Some(script),
+                shell: Some("bash"),
+              })
+            None => result_steps.push(step)
+          }
+        }
+        None => result_steps.push(step)
+      }
+    }
+    result_jobs.push({ ..job, steps: result_steps })
+  }
+  { ..workflow, jobs: result_jobs }
+}
+
+///|
 pub fn filter_workflow_jobs(
   workflow : WorkflowSpec,
   skip_job_ids : Array[String],

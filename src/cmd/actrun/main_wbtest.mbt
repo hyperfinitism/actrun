@@ -1283,6 +1283,7 @@ test "config: merge cli overrides config" {
     nix_mode: "auto",
     nix_packages: ["python312"],
     container_runtime: "podman",
+    local_override_actions: {},
     affected: {},
     includes: [],
   }
@@ -1312,6 +1313,7 @@ test "config: cli skip_actions overrides local_skip_actions" {
     nix_mode: "",
     nix_packages: [],
     container_runtime: "",
+    local_override_actions: {},
     affected: {},
     includes: [],
   }
@@ -1355,6 +1357,7 @@ test "config: container_runtime from config" {
     nix_mode: "",
     nix_packages: [],
     container_runtime: "podman",
+    local_override_actions: {},
     affected: {},
     includes: [],
   }
@@ -1373,6 +1376,7 @@ test "config: cli container_runtime overrides config" {
     nix_mode: "",
     nix_packages: [],
     container_runtime: "docker",
+    local_override_actions: {},
     affected: {},
     includes: [],
   }

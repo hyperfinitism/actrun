@@ -1480,6 +1480,7 @@ fn persist_run_record(
 struct ActrunConfig {
   workspace_mode : String
   local_skip_actions : Array[String]
+  local_override_actions : Map[String, String]
   trust_actions : Bool
   nix_mode : String
   nix_packages : Array[String]
@@ -1493,6 +1494,7 @@ fn default_actrun_config() -> ActrunConfig {
   {
     workspace_mode: "",
     local_skip_actions: [],
+    local_override_actions: {},
     trust_actions: false,
     nix_mode: "",
     nix_packages: [],
@@ -1588,6 +1590,9 @@ async fn generate_actrun_config() -> String {
     "# If not set, on:push:paths from workflow is used as fallback\n"
   config = config + "# [affected.\"ci.yml\"]\n"
   config = config + "# patterns = [\"src/**\", \"package.json\"]\n"
+  config = config + "\n# Override actions with local scripts (optional)\n"
+  config = config + "# [override.\"actions/setup-node\"]\n"
+  config = config + "# run = \"echo 'using local node'\"\n"
   config
 }
 
@@ -1731,8 +1736,8 @@ let known_config_keys : Array[String] = [
 
 ///|
 fn is_known_config_key(key : String) -> Bool {
-  // Allow any key under [affected.*] section
-  if key.has_prefix("affected.") {
+  // Allow any key under [affected.*] and [override.*] sections
+  if key.has_prefix("affected.") || key.has_prefix("override.") {
     return true
   }
   for k in known_config_keys {
@@ -1795,6 +1800,25 @@ fn load_actrun_config(dir : String) -> ActrunConfig {
           )
           if wf.length() > 0 {
             result[wf] = patterns
+          }
+        }
+      }
+      result
+    },
+    local_override_actions: {
+      let result : Map[String, String] = {}
+      // Parse override keys: "override.ACTION.run" → action → script
+      let prefix = "override."
+      let suffix = ".run"
+      for key, value in parsed.entries {
+        if key.has_prefix(prefix) && key.has_suffix(suffix) {
+          let action = String::unsafe_substring(
+            key,
+            start=prefix.length(),
+            end=key.length() - suffix.length(),
+          )
+          if action.length() > 0 {
+            result[action] = value
           }
         }
       }
@@ -5409,9 +5433,22 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
     stripped_workflow
   }
 
+  // Apply local_override_actions: replace uses with run scripts
+  let overridden_workflow = if config.local_override_actions.length() > 0 {
+    for action, script in config.local_override_actions {
+      println("override  " + action + " → run script")
+    }
+    @ar.override_workflow_steps(
+      effective_workflow,
+      config.local_override_actions,
+    )
+  } else {
+    effective_workflow
+  }
+
   // --retry: filter out successful jobs from previous run
   let retry_workflow = @ar.filter_workflow_jobs(
-    effective_workflow, retry_skip_jobs,
+    overridden_workflow, retry_skip_jobs,
   )
 
   // --job / --step: select specific job and/or step
