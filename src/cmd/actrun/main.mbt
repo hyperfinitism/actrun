@@ -189,6 +189,7 @@ fn usage_text() -> String {
   "\n" +
   "Other commands:\n" +
   "  list [patterns...]           List workflows and their run commands\n" +
+  "  clean [target]               Clean build artifacts (all, runs, cache, workspace, actions)\n" +
   "  cron [show|install|uninstall] Manage cron schedules from workflows\n" +
   "  init                         Create actrun.toml config file\n" +
   "  doctor                       Check tool dependencies\n" +
@@ -2197,6 +2198,67 @@ async fn apply_container_runtime(options : CliOptions) -> Unit {
     @xsys.set_env_var("ACTRUN_CONTAINER_RUNTIME", wrapper_path)
   } else {
     @xsys.set_env_var("ACTRUN_CONTAINER_RUNTIME", bin)
+  }
+}
+
+///|
+async fn handle_clean_command(args : Array[String]) -> Int {
+  let actrun_root = "_build/actrun"
+  let target = if args.length() > 2 { args[2] } else { "all" }
+  let targets : Map[String, String] = {
+    "runs": actrun_root + "/runs",
+    "cache": actrun_root + "/cache",
+    "workspace": actrun_root + "/workspace",
+    "actions": actrun_root + "/github_actions",
+    "artifacts": actrun_root + "/artifacts",
+    "checkouts": actrun_root + "/checkouts",
+  }
+  if target == "all" {
+    ignore(run_command("git", ["worktree", "prune"], cwd="."))
+    if @xfs.path_exists(actrun_root) {
+      let (code, _, _) = run_command("rm", ["-rf", actrun_root])
+      if code == 0 {
+        println("Cleaned " + actrun_root)
+      } else {
+        print_errors(["failed to clean " + actrun_root])
+        return 1
+      }
+    } else {
+      println("Nothing to clean")
+    }
+    return 0
+  }
+  match targets.get(target) {
+    Some(path) => {
+      if target == "workspace" {
+        ignore(run_command("git", ["worktree", "prune"], cwd="."))
+      }
+      if @xfs.path_exists(path) {
+        let (code, _, _) = run_command("rm", ["-rf", path])
+        if code == 0 {
+          println("Cleaned " + path)
+        } else {
+          print_errors(["failed to clean " + path])
+          return 1
+        }
+      } else {
+        println("Nothing to clean (" + path + " does not exist)")
+      }
+      0
+    }
+    None => {
+      let valid = []
+      for key, _ in targets {
+        valid.push(key)
+      }
+      print_errors([
+        "unknown clean target: " +
+        target +
+        ". Valid targets: all, " +
+        valid.join(", "),
+      ])
+      1
+    }
   }
 }
 
@@ -5698,6 +5760,13 @@ async fn main {
   }
   if cli_args.length() > 1 && cli_args[1] == "init" {
     let exit_code = handle_init_command()
+    if exit_code != 0 {
+      @xsys.exit(exit_code)
+    }
+    return
+  }
+  if cli_args.length() > 1 && cli_args[1] == "clean" {
+    let exit_code = handle_clean_command(cli_args)
     if exit_code != 0 {
       @xsys.exit(exit_code)
     }
