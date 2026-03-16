@@ -3657,12 +3657,36 @@ async fn run_in_docker_container(options : CliOptions) -> Int {
   args.push("workflow")
   args.push("run")
   args.push(options.workflow_path)
+  // Container is isolated, so trust actions and run in local mode
+  args.push("--trust")
+  args.push("--local")
   for pattern in options.skip_actions {
     args.push("--skip-action")
     args.push(pattern)
   }
   if options.dry_run {
     args.push("--dry-run")
+  }
+  if options.affected {
+    args.push("--affected")
+    if options.affected_base.length() > 0 {
+      args.push(options.affected_base)
+    }
+  }
+  if options.retry {
+    args.push("--retry")
+  }
+  if options.job_filter.length() > 0 {
+    args.push("--job")
+    args.push(options.job_filter)
+  }
+  if options.step_filter.length() > 0 {
+    args.push("--step")
+    args.push(options.step_filter)
+  }
+  if options.trigger.length() > 0 {
+    args.push("--trigger")
+    args.push(options.trigger)
   }
   let (code, stdout, stderr) = run_command(docker_bin, args, cwd=".")
   if stdout.length() > 0 {
