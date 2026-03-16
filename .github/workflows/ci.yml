@@ -132,7 +132,7 @@ jobs:
         run: moon build src/cmd/actrun --target native
       - name: Run example
         run: |
-          ACTRUN=_build/native/release/build/cmd/actrun/actrun.exe
+          ACTRUN=$(find _build/native -name "actrun.exe" -type f | head -1)
           $ACTRUN ${{ matrix.example }} ${{ matrix.mode }} --trust --trigger push
           echo "Exit code: $?"
 
@@ -162,7 +162,7 @@ jobs:
         run: moon build src/cmd/actrun --target native
       - name: Run example
         run: |
-          ACTRUN=_build/native/release/build/cmd/actrun/actrun.exe
+          ACTRUN=$(find _build/native -name "actrun.exe" -type f | head -1)
           $ACTRUN ${{ matrix.example }} ${{ matrix.mode }} --trust --trigger push
 
   examples-nix:
@@ -193,5 +193,5 @@ jobs:
         run: moon build src/cmd/actrun --target native
       - name: Run example
         run: |
-          ACTRUN=_build/native/release/build/cmd/actrun/actrun.exe
+          ACTRUN=$(find _build/native -name "actrun.exe" -type f | head -1)
           $ACTRUN ${{ matrix.example }} ${{ matrix.mode }} --trust --trigger push
