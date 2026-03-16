@@ -1,0 +1,19 @@
+name: local-file-safety
+'on': push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create a file
+        run: echo "precious" > my-file.txt
+      - name: Checkout again (should not delete my-file.txt)
+        uses: actions/checkout@v5
+      - name: Verify file survives
+        run: |
+          if [ ! -f my-file.txt ]; then
+            echo "FAIL: my-file.txt was deleted by checkout"
+            exit 1
+          fi
+          echo "OK: my-file.txt survived checkout"
+          cat my-file.txt

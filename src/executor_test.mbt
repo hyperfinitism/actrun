@@ -1091,6 +1091,87 @@ async test "executor: checkout clean default preserves untracked files in local 
 
 ///|
 #cfg(target="native")
+async test "executor: local checkout does not delete files created between checkouts" {
+  let workspace = prepare_git_checkout_workspace(
+    "executor-checkout-no-delete-between",
+  )
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "build",
+      [
+        new_uses_step("checkout1", "actions/checkout@v4"),
+        new_run_step(
+          "create",
+          "echo precious > my-file.txt",
+          shell=Some("bash"),
+        ),
+        new_uses_step("checkout2", "actions/checkout@v4"),
+        new_run_step(
+          "verify",
+          "printf '%s' \"$(test -f my-file.txt && echo survived || echo deleted)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+  inspect(report.state, content="completed")
+  inspect(
+    expect_task_report(report, "build/verify").stdout
+    .trim(chars=" \n\r\t")
+    .to_string(),
+    content="survived",
+  )
+}
+
+///|
+#cfg(target="native")
+async test "executor: local checkout preserves .git directory" {
+  let workspace = prepare_git_checkout_workspace(
+    "executor-checkout-preserves-git",
+  )
+  // Record original .git state
+  let has_git_before = @xfs.path_exists(workspace + "/.git")
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "build",
+      [
+        new_uses_step("checkout", "actions/checkout@v4"),
+        new_run_step(
+          "verify",
+          "printf '%s' \"$(test -d .git && echo exists || echo missing)\"",
+          shell=Some("bash"),
+        ),
+      ],
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow(workflow)
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+  inspect(report.ok, content="true")
+  inspect(
+    expect_task_report(report, "build/verify").stdout
+    .trim(chars=" \n\r\t")
+    .to_string(),
+    content="exists",
+  )
+  // .git should still exist after checkout
+  let has_git_after = @xfs.path_exists(workspace + "/.git")
+  inspect(has_git_before, content="true")
+  inspect(has_git_after, content="true")
+}
+
+///|
+#cfg(target="native")
 async test "executor: checkout clean false preserves untracked files" {
   let workspace = prepare_git_checkout_workspace(
     "executor-checkout-clean-false",
