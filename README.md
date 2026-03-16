@@ -127,9 +127,46 @@ actrun cache prune --key <key>                         # Delete cache entry
 | `--no-nix` | Disable nix wrapping even if flake.nix/shell.nix exists |
 | `--nix-packages <pkgs>` | Ad-hoc nix packages (space-separated) |
 | `--container-runtime <name>` | Container runtime: `docker`, `podman`, `container`, `lima`, `nerdctl` |
-| `--affected` | Only run if files matching `actrun.toml` patterns changed since last success |
+| `--affected [base]` | Only run if files matching patterns changed (see below) |
 | `--retry` | Re-run only failed jobs from the latest run |
-| `--json` | JSON output for read commands |
+| `--json` | JSON output for read commands and `--dry-run` |
+
+## Affected Runs
+
+Skip workflows when no relevant files have changed. Patterns are resolved in order:
+
+1. `actrun.toml` `[affected."<workflow>"]` patterns
+2. `on:push:paths` from the workflow file (automatic fallback)
+
+```bash
+# Compare against last successful run (default)
+actrun ci.yml --affected
+
+# Compare against a specific rev
+actrun ci.yml --affected HEAD~3
+actrun ci.yml --affected abc1234
+
+# Preview what would happen (shows plan even if skipped)
+actrun ci.yml --affected HEAD~1 --dry-run
+```
+
+Configure patterns in `actrun.toml`:
+
+```toml
+[affected."ci.yml"]
+patterns = ["src/**", "package.json"]
+
+[affected.".github/workflows/lint.yml"]
+patterns = ["src/**", "*.config.*"]
+```
+
+If `actrun.toml` has no patterns, `on:push:paths` from the workflow is used automatically:
+
+```yaml
+on:
+  push:
+    paths: ["src/**", "*.toml"]  # actrun --affected uses these
+```
 
 ## Workspace Modes
 

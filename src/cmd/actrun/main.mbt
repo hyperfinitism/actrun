@@ -215,7 +215,7 @@ fn usage_text() -> String {
   "  --no-nix                     Disable nix wrapping even if flake.nix/shell.nix exists\n" +
   "  --nix-packages <pkgs>        Additional nix packages (space-separated)\n" +
   "  --container-runtime <name>   Container runtime: docker, podman, container, lima, nerdctl\n" +
-  "  --affected [base]             Only run if files matching patterns changed (default: last success, or rev like HEAD~3)\n" +
+  "  --affected [base]             Only run if files changed since base (default: last success; accepts rev like HEAD~3)\n" +
   "  --retry                      Re-run only failed jobs from the latest run\n" +
   "  --job <id>                   Run only the specified job\n" +
   "  --step <id>                  Run only the specified step (use with --job)\n" +
