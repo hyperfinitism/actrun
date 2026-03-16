@@ -1555,3 +1555,163 @@ test "extract_cron_schedules: no schedule" {
   let schedules = extract_cron_schedules(yaml)
   inspect(schedules, content="[]")
 }
+
+// --- glob_match tests ---
+
+///|
+test "glob_match: exact match" {
+  inspect(glob_match("README.md", "README.md"), content="true")
+  inspect(glob_match("README.md", "readme.md"), content="false")
+  inspect(glob_match("src/main.rs", "src/main.rs"), content="true")
+}
+
+///|
+test "glob_match: wildcard all" {
+  inspect(glob_match("*", "anything"), content="true")
+  inspect(glob_match("**", "any/path"), content="true")
+  inspect(glob_match("**/*", "any/path/file"), content="true")
+}
+
+///|
+test "glob_match: directory recursive (**)" {
+  inspect(glob_match("src/**", "src/main.rs"), content="true")
+  inspect(glob_match("src/**", "src/sub/deep/file.rs"), content="true")
+  inspect(glob_match("src/**", "src"), content="true")
+  inspect(glob_match("src/**", "tests/main.rs"), content="false")
+  inspect(glob_match("src/**", "src2/main.rs"), content="false")
+}
+
+///|
+test "glob_match: extension wildcard (**/*.ext)" {
+  inspect(glob_match("**/*.rs", "src/main.rs"), content="true")
+  inspect(glob_match("**/*.rs", "main.rs"), content="true")
+  inspect(glob_match("**/*.rs", "src/sub/lib.rs"), content="true")
+  inspect(glob_match("**/*.rs", "src/main.ts"), content="false")
+}
+
+///|
+test "glob_match: root extension wildcard (*.ext)" {
+  inspect(glob_match("*.toml", "Cargo.toml"), content="true")
+  inspect(glob_match("*.toml", "moon.mod.toml"), content="true")
+  inspect(glob_match("*.toml", "src/config.toml"), content="true")
+  inspect(glob_match("*.md", "README.md"), content="true")
+  inspect(glob_match("*.md", "src/README.md"), content="true")
+}
+
+///|
+test "glob_match: directory non-recursive (dir/*)" {
+  inspect(glob_match("src/*", "src/main.rs"), content="true")
+  inspect(glob_match("src/*", "src/lib.rs"), content="true")
+  inspect(glob_match("src/*", "src/sub/deep.rs"), content="false")
+  inspect(glob_match("src/*", "tests/main.rs"), content="false")
+}
+
+///|
+test "glob_match: directory with extension (dir/*.ext)" {
+  inspect(glob_match("src/*.rs", "src/main.rs"), content="true")
+  inspect(glob_match("src/*.rs", "src/lib.rs"), content="true")
+  inspect(glob_match("src/*.rs", "src/main.ts"), content="false")
+  inspect(glob_match("src/*.rs", "src/sub/main.rs"), content="false")
+}
+
+///|
+test "glob_match: prefix match (directory)" {
+  inspect(glob_match("docs", "docs/intro.md"), content="true")
+  inspect(glob_match("docs", "docs"), content="true")
+  inspect(glob_match("docs", "docs2/intro.md"), content="false")
+}
+
+///|
+test "glob_match: path suffix match (**/filename)" {
+  inspect(glob_match("**/package.json", "package.json"), content="true")
+  inspect(glob_match("**/package.json", "sub/package.json"), content="true")
+  inspect(
+    glob_match("**/package.json", "deep/sub/package.json"),
+    content="true",
+  )
+  inspect(glob_match("**/package.json", "package.lock"), content="false")
+}
+
+// --- files_match_patterns tests ---
+
+///|
+test "files_match_patterns: basic matching" {
+  inspect(
+    files_match_patterns(["src/main.rs", "README.md"], ["src/**"]),
+    content="true",
+  )
+  inspect(
+    files_match_patterns(["README.md", "docs/intro.md"], ["src/**"]),
+    content="false",
+  )
+}
+
+///|
+test "files_match_patterns: multiple patterns" {
+  inspect(
+    files_match_patterns(
+      ["docs/intro.md"],
+      ["src/**", "docs/**", "*.toml"],
+    ),
+    content="true",
+  )
+  inspect(
+    files_match_patterns(["Cargo.toml"], ["src/**", "docs/**", "*.toml"]),
+    content="true",
+  )
+  inspect(
+    files_match_patterns(["README.md"], ["src/**", "docs/**", "*.toml"]),
+    content="false",
+  )
+}
+
+///|
+test "files_match_patterns: empty inputs" {
+  inspect(files_match_patterns([], ["src/**"]), content="false")
+  inspect(files_match_patterns(["src/main.rs"], []), content="false")
+  inspect(files_match_patterns([], []), content="false")
+}
+
+///|
+test "files_match_patterns: exact file patterns" {
+  inspect(
+    files_match_patterns(
+      ["package.json", "src/index.ts"],
+      ["package.json", "pnpm-lock.yaml"],
+    ),
+    content="true",
+  )
+  inspect(
+    files_match_patterns(
+      ["src/index.ts"],
+      ["package.json", "pnpm-lock.yaml"],
+    ),
+    content="false",
+  )
+}
+
+///|
+test "files_match_patterns: realistic CI patterns" {
+  // Typical patterns from actrun.toml or on:push:paths
+  let patterns = ["src/**", "package.json", "pnpm-lock.yaml"]
+  inspect(
+    files_match_patterns(["src/lib/parser.ts"], patterns),
+    content="true",
+  )
+  inspect(
+    files_match_patterns(["package.json"], patterns),
+    content="true",
+  )
+  inspect(
+    files_match_patterns(["pnpm-lock.yaml"], patterns),
+    content="true",
+  )
+  inspect(
+    files_match_patterns(["README.md"], patterns),
+    content="false",
+  )
+  inspect(
+    files_match_patterns(["docs/guide.md", ".github/workflows/ci.yml"], patterns),
+    content="false",
+  )
+}
