@@ -6,7 +6,7 @@
     "actrun": "./dist/actrun.js"
   },
   "scripts": {
-    "build": "moon build src/cmd/actrun --target js && node scripts/bundle-js.js",
+    "build": "moon build --release src/cmd/actrun --target js && node scripts/bundle-js.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
