@@ -195,7 +195,7 @@ fn usage_text() -> String {
   "Workflow run flags:\n" +
   "  --repo <path>                Run from a git repository\n" +
   "  --workspace <path>           Workspace root for isolated execution\n" +
-  "  --workspace-mode <mode>      Execution mode: tmp (default), local, worktree, docker\n" +
+  "  --workspace-mode <mode>      Execution mode: worktree (default), local, tmp, docker\n" +
   "  --run-root <path>            Run record storage root\n" +
   "  --event <path>               Push event JSON file\n" +
   "  --repository <owner/repo>    GitHub repository name\n" +
@@ -208,6 +208,7 @@ fn usage_text() -> String {
   "  --local                      Shorthand for --workspace-mode local\n" +
   "  --worktree                   Shorthand for --workspace-mode worktree\n" +
   "  --tmp                        Shorthand for --workspace-mode tmp\n" +
+  "  --docker                     Shorthand for --workspace-mode docker\n" +
   "  --input <key=value>          Set workflow_dispatch input (repeatable)\n" +
   "  --trust                      Trust all third-party actions without prompt\n" +
   "  --env <file>                 Load environment variables from file\n" +
@@ -2902,6 +2903,11 @@ fn parse_cli_args(args : Array[String]) -> CliParseResult {
     }
     if arg == "--local" {
       workspace_mode = "local"
+      index += 1
+      continue
+    }
+    if arg == "--docker" {
+      workspace_mode = "docker"
       index += 1
       continue
     }
