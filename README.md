@@ -74,6 +74,10 @@ nix_packages = ["python312", "jq"]
 # Container runtime: docker, podman, container, lima, nerdctl
 container_runtime = "docker"
 
+# Override actions with local commands
+# [override."actions/setup-node"]
+# run = "echo 'using local node' && node --version"
+
 # Affected file patterns per workflow
 # [affected."ci.yml"]
 # patterns = ["src/**", "package.json"]
@@ -238,6 +242,29 @@ steps:
 ```
 
 On GitHub Actions, `ACTRUN_LOCAL` is not set, so `!env.ACTRUN_LOCAL` evaluates to `true` and all steps run normally.
+
+## Action Overrides
+
+Replace specific `uses:` action steps with custom `run:` commands via `actrun.toml`. This is useful when you have tools installed locally and want to skip the action's setup logic.
+
+```toml
+[override."actions/setup-node"]
+run = "echo 'using local node' && node --version"
+```
+
+When a workflow step matches `uses: actions/setup-node@*`, actrun replaces it with the specified `run:` command before execution.
+
+Combine with `local_skip_actions` for full control:
+
+```toml
+local_skip_actions = ["actions/checkout"]
+
+[override."actions/setup-node"]
+run = "echo 'using local node'"
+
+[override."actions/setup-python"]
+run = "python3 --version"
+```
 
 ## Secrets & Variables
 

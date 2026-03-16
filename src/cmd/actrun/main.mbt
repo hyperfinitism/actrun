@@ -5435,7 +5435,7 @@ async fn handle_workflow_run_command(raw_options : CliOptions) -> Int {
 
   // Apply local_override_actions: replace uses with run scripts
   let overridden_workflow = if config.local_override_actions.length() > 0 {
-    for action, script in config.local_override_actions {
+    for action, _ in config.local_override_actions {
       println("override  " + action + " → run script")
     }
     @ar.override_workflow_steps(

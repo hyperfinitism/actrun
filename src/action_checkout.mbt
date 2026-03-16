@@ -593,11 +593,6 @@ async fn execute_builtin_checkout_native(
   let sparse_input = resolved_plan_env
     .get("INPUT_SPARSE_CHECKOUT")
     .unwrap_or("")
-  ignore(
-    parse_bool_true_default(
-      resolved_plan_env.get("INPUT_CLEAN").unwrap_or("true"),
-    ),
-  )
   let fetch_depth = match
     parse_checkout_fetch_depth(
       resolved_plan_env.get("INPUT_FETCH_DEPTH").unwrap_or(""),

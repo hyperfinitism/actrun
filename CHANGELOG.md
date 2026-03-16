@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.13.0
+
+- Add `local_override_actions`: replace actions with custom shell scripts via `actrun.toml`
+- Add `--podman` shorthand for `--docker --container-runtime podman`
+- Add `--apple-container` shorthand for `--docker --container-runtime container`
+
+## 0.12.0
+
+- Default workspace mode changed from `local` to `--worktree` for safety
+- Fix `--docker` mode: pass `--trust --local` to container, forward more flags
+- Fix workspace dir collision when multiple runs happen in same millisecond
+- Add examples matrix to CI (66+ jobs across worktree/local/tmp modes)
+- Fix `--tmp` and `--worktree` clone from subdirectories (detect git root)
+
+## 0.11.0
+
+- Local mode checkout never deletes files — only overwrites
+- Remove unused checkout deletion code (clean parameter, tracked file removal)
+- Add `--docker` shorthand
+
+## 0.10.0
+
+- Improve `--dry-run` output: show step names, shell type, job dependencies
+- Add `--dry-run --json` for structured execution plan output
+- Allow `--affected --dry-run` combination
+- Document `--affected` in README and `--help`
+
+## 0.9.0
+
+- Add JS backend support via Node.js `child_process` shim
+- npm package: `@mizchi/actrun` with esbuild/oxc-minify (2.4MB → 1.2KB)
+- Remove `#cfg(target="native")` gates from executor
+- Multi-arch Docker: amd64 native + arm64 JS bundle
+- Add `package.json` and `scripts/bundle-js.js`
+
+## 0.8.0
+
+- Harden against symlink attacks and path traversal
+- Add `validate_workspace_path()` for consistent boundary checks
+- Local mode safety: confirmation prompt, .git protection
+- Fix Docker image accessibility (issue #4, multi-arch build)
+- Fix checkout clean mode destroying untracked files (issue #3)
+- Add Claude Code skills (actrun, actrun-debug, actrun-init)
+- Enhanced `--affected`: rev expressions (`HEAD~3`), `on:push:paths` fallback
+- Fix `actrun.toml` affected syntax to valid TOML (`[affected."ci.yml"]`)
+- Resolve reusable workflows from caller directory
+
 ## [Unreleased]
 
 ### Added
