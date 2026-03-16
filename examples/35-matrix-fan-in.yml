@@ -1,0 +1,16 @@
+name: matrix-fan-in
+'on': push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux, macos, windows]
+    steps:
+      - run: echo "building ${{ matrix.target }}"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "all 3 builds done, deploying"

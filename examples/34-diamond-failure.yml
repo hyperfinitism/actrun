@@ -1,0 +1,36 @@
+name: diamond-failure
+'on': push
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "start"
+
+  left:
+    needs: start
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "left succeeds"
+
+  right:
+    needs: start
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "right fails" && exit 1
+
+  merge:
+    needs: [left, right]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "left: ${{ needs.left.result }}"
+          echo "right: ${{ needs.right.result }}"
+          echo "merge runs despite right failure"
+
+  final:
+    needs: merge
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "final always runs"

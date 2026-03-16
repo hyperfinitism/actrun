@@ -1,0 +1,42 @@
+name: deep-dependencies
+'on': push
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "lint done"
+
+  build-a:
+    needs: lint
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - id: ver
+        run: echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+      - run: echo "build-a done"
+
+  build-b:
+    needs: lint
+    runs-on: ubuntu-latest
+    outputs:
+      hash: ${{ steps.h.outputs.hash }}
+    steps:
+      - id: h
+        run: echo "hash=abc123" >> "$GITHUB_OUTPUT"
+      - run: echo "build-b done"
+
+  integration:
+    needs: [build-a, build-b]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "version: ${{ needs.build-a.outputs.version }}"
+          echo "hash: ${{ needs.build-b.outputs.hash }}"
+          echo "integration done"
+
+  deploy:
+    needs: integration
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "deploy done"

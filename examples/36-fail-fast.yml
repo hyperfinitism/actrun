@@ -1,0 +1,16 @@
+name: fail-fast
+'on': push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        version: [18, 20, 22]
+    steps:
+      - run: |
+          echo "testing version ${{ matrix.version }}"
+          if [ "${{ matrix.version }}" = "20" ]; then
+            echo "version 20 fails"
+            exit 1
+          fi
