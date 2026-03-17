@@ -1675,11 +1675,48 @@ priv struct ActionManifestParseResult {
 }
 
 ///|
+/// Convert moonbit-community/yaml Yaml to internal YamlValue
+fn yaml_to_internal(yaml : @yaml.Yaml) -> YamlValue {
+  match yaml {
+    @yaml.Yaml::String(s) => YamlValue::Str(s)
+    @yaml.Yaml::Integer(n) => YamlValue::Str(n.to_string())
+    @yaml.Yaml::Real(_, repr~) => YamlValue::Str(repr)
+    @yaml.Yaml::Boolean(b) => YamlValue::Str(if b { "true" } else { "false" })
+    @yaml.Yaml::Null | @yaml.Yaml::BadValue => YamlValue::Null
+    @yaml.Yaml::Array(items) => {
+      let result : Array[YamlValue] = []
+      for item in items {
+        result.push(yaml_to_internal(item))
+      }
+      YamlValue::Seq(result)
+    }
+    @yaml.Yaml::Map(entries) => {
+      let fields : Array[YamlField] = []
+      for key, value in entries {
+        fields.push({ key, value: yaml_to_internal(value) })
+      }
+      YamlValue::Obj(fields)
+    }
+  }
+}
+
+///|
 fn parse_action_manifest_yaml(text : String) -> ActionManifestParseResult {
-  let (yaml, parser_errors) = parse_yaml_document(text)
+  // Use moonbit-community/yaml for robust YAML parsing
+  // (handles multiline single-quoted strings, etc.)
   let errors : Array[String] = []
-  for err in parser_errors {
-    errors.push(err)
+  let yaml = try {
+    let docs = @yaml.Yaml::load_from_string(text)
+    if docs.length() > 0 {
+      yaml_to_internal(docs[0])
+    } else {
+      YamlValue::Null
+    }
+  } catch {
+    err => {
+      errors.push("YAML parse error: " + err.to_string())
+      return { action: None, errors }
+    }
   }
   guard yaml is Obj(root_fields) else {
     errors.push("local action root must be a mapping")

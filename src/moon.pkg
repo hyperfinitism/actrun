@@ -13,6 +13,7 @@ import {
   "mizchi/bitflow/workflow" @wf,
   "moonbitlang/x/fs" @xfs,
   "moonbitlang/x/sys" @xsys,
+  "moonbit-community/yaml" @yaml,
 }
 
 import {
