@@ -44,3 +44,39 @@ test "nix_wrap_command: Packages wraps with nix-shell -p" {
     ),
   )
 }
+
+///|
+test "is_commit_sha: full 40-char SHA is recognized" {
+  assert_eq(is_commit_sha("abc1234def5678abc1234def5678abc1234def56"), true)
+}
+
+///|
+test "is_commit_sha: short 7-char SHA is recognized" {
+  assert_eq(is_commit_sha("abc1234"), true)
+}
+
+///|
+test "is_commit_sha: uppercase hex chars are valid" {
+  assert_eq(is_commit_sha("ABC1234DEF5678ABC1234DEF5678ABC1234DEF56"), true)
+}
+
+///|
+test "is_commit_sha: tag is not a SHA" {
+  assert_eq(is_commit_sha("v1"), false)
+  assert_eq(is_commit_sha("v1.2.3"), false)
+}
+
+///|
+test "is_commit_sha: branch name is not a SHA" {
+  assert_eq(is_commit_sha("main"), false)
+}
+
+///|
+test "is_commit_sha: too short hex string is not a SHA" {
+  assert_eq(is_commit_sha("abc123"), false)
+}
+
+///|
+test "is_commit_sha: empty string is not a SHA" {
+  assert_eq(is_commit_sha(""), false)
+}

@@ -73,6 +73,40 @@ async fn test_support_prepare_fake_github_git_bin(
 }
 
 ///|
+// Fake git bin for SHA-pinned fetches.
+// Handles: git init <dir> (creates action.yml there),
+//          git fetch / git checkout (no-op, files already placed by init).
+#cfg(target="native")
+async fn test_support_prepare_fake_sha_git_bin(
+  workspace : String,
+  action_src : String,
+  log_path : String,
+) -> String {
+  let bin_dir = workspace + "/bin"
+  test_support_ensure_dir(bin_dir)
+  let git_path = bin_dir + "/git"
+  let absolute_log_path = test_support_absolute_path(log_path)
+  let script = "#!/bin/sh\n" +
+    "set -eu\n" +
+    "printf '%s\\n' \"$@\" >> '" +
+    absolute_log_path +
+    "'\n" +
+    "cmd=\"$1\"\n" +
+    "shift\n" +
+    "if [ \"$cmd\" = \"init\" ]; then\n" +
+    "  dest=\"$1\"\n" +
+    "  mkdir -p \"$dest/composite\"\n" +
+    "  cat > \"$dest/composite/action.yml\" <<'ACTIONEOF'\n" +
+    action_src +
+    "\nACTIONEOF\n" +
+    "fi\n" +
+    "exit 0\n"
+  @xfs.write_string_to_file(git_path, script)
+  test_support_make_executable(git_path)
+  test_support_absolute_path(git_path)
+}
+
+///|
 #cfg(target="native")
 async fn test_support_prepare_fake_git_bin_from_source(
   workspace : String,

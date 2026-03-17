@@ -98,6 +98,23 @@ async fn prefetch_mkdir_p(path : String) -> Bool {
 }
 
 ///|
+fn is_commit_sha(version : String) -> Bool {
+  if version.length() < 7 {
+    return false
+  }
+  for c in version {
+    if not(
+        (c >= '0' && c <= '9') ||
+        (c >= 'a' && c <= 'f') ||
+        (c >= 'A' && c <= 'F'),
+      ) {
+      return false
+    }
+  }
+  true
+}
+
+///|
 async fn prefetch_ensure_cached_github_repo_root(
   action_ref : ActionRef,
   git_bin : String?,
@@ -124,27 +141,75 @@ async fn prefetch_ensure_cached_github_repo_root(
           layout.repo,
           github_base_url,
         )
-        let (code, stdout, stderr) = run_command(
-          github_action_git_bin(git_bin),
-          [
-            "clone",
-            "--depth",
-            "1",
-            "--branch",
-            layout.version,
-            clone_url,
-            layout.repo_root,
-          ],
-          cwd=".",
-        )
-        if code != 0 {
-          return {
-            repo_root: None,
-            did_fetch: false,
-            errors: [
-              "action '\{layout.uses}' git clone failed: " +
-              prefetch_command_message(stdout, stderr),
+        if is_commit_sha(layout.version) {
+          let (init_code, init_stdout, init_stderr) = run_command(
+            github_action_git_bin(git_bin),
+            ["init", layout.repo_root],
+            cwd=".",
+          )
+          if init_code != 0 {
+            return {
+              repo_root: None,
+              did_fetch: false,
+              errors: [
+                "action '\{layout.uses}' git init failed: " +
+                prefetch_command_message(init_stdout, init_stderr),
+              ],
+            }
+          }
+          let (fetch_code, fetch_stdout, fetch_stderr) = run_command(
+            github_action_git_bin(git_bin),
+            ["fetch", "--depth", "1", clone_url, layout.version],
+            cwd=layout.repo_root,
+          )
+          if fetch_code != 0 {
+            return {
+              repo_root: None,
+              did_fetch: false,
+              errors: [
+                "action '\{layout.uses}' git fetch failed: " +
+                prefetch_command_message(fetch_stdout, fetch_stderr),
+              ],
+            }
+          }
+          let (checkout_code, checkout_stdout, checkout_stderr) = run_command(
+            github_action_git_bin(git_bin),
+            ["checkout", "FETCH_HEAD"],
+            cwd=layout.repo_root,
+          )
+          if checkout_code != 0 {
+            return {
+              repo_root: None,
+              did_fetch: false,
+              errors: [
+                "action '\{layout.uses}' git checkout failed: " +
+                prefetch_command_message(checkout_stdout, checkout_stderr),
+              ],
+            }
+          }
+        } else {
+          let (code, stdout, stderr) = run_command(
+            github_action_git_bin(git_bin),
+            [
+              "clone",
+              "--depth",
+              "1",
+              "--branch",
+              layout.version,
+              clone_url,
+              layout.repo_root,
             ],
+            cwd=".",
+          )
+          if code != 0 {
+            return {
+              repo_root: None,
+              did_fetch: false,
+              errors: [
+                "action '\{layout.uses}' git clone failed: " +
+                prefetch_command_message(stdout, stderr),
+              ],
+            }
           }
         }
         { repo_root: Some(layout.repo_root), did_fetch: true, errors: [] }

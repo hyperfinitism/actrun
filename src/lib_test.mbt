@@ -2401,6 +2401,47 @@ async test "lowering: remote reusable workflow local action is resolved from cac
 }
 
 ///|
+#cfg(target="native")
+async test "prefetch: SHA-pinned action uses git init+fetch+checkout instead of clone" {
+  let workspace = prepare_local_action_workspace("prefetch-sha-pinning")
+  let sha = "abc1234def5678abc1234def5678abc1234def56"
+  let action_uses = "mizchi-fetch-lib/demo-action-lib/composite@" + sha
+  let repo_cache_root = "_build/actrun/github_actions/mizchi-fetch-lib/demo-action-lib/" +
+    sha
+  let log_path = workspace + "/git.log"
+  test_support_remove_tree(repo_cache_root)
+  let action_src =
+    #|name: My Action
+    #|runs:
+    #|  using: composite
+    #|  steps:
+    #|    - id: hello
+    #|      run: echo hello
+    #|      shell: bash
+  let git_path = test_support_prepare_fake_sha_git_bin(
+    workspace, action_src, log_path,
+  )
+  let workflow = new_workflow("ci", [
+    new_job("test", [new_uses_step("action", action_uses)]),
+  ])
+  let prefetch = prefetch_workflow_github_actions_native(
+    workflow,
+    workspace,
+    git_bin=Some(git_path),
+  )
+  inspect(prefetch.errors, content="[]")
+  inspect(prefetch.fetched.length(), content="1")
+  let log = @xfs.read_file_to_string(log_path)
+  // Must NOT use clone --branch (which fails for SHAs)
+  assert_eq(log.contains("clone"), false)
+  // Must use: git init <dir>, git fetch --depth 1 <url> <sha>, git checkout FETCH_HEAD
+  assert_eq(log.contains("init\n"), true)
+  assert_eq(log.contains("fetch\n--depth\n1\n"), true)
+  assert_eq(log.contains(sha + "\n"), true)
+  assert_eq(log.contains("checkout\nFETCH_HEAD\n"), true)
+}
+
+///|
 test "lowering: nested local reusable workflow is expanded recursively" {
   let workspace = prepare_local_action_workspace(
     "reusable-workflow-nested-local",
