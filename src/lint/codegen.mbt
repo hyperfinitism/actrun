@@ -3,6 +3,7 @@
 pub fn workflow_to_shell(
   workflow : @ar.WorkflowSpec,
   reusable_workflows? : Map[String, @ar.WorkflowSpec] = {},
+  parallel? : Bool = false,
 ) -> String {
   let out : Array[String] = []
   out.push("#!/usr/bin/env bash")
@@ -12,6 +13,11 @@ pub fn workflow_to_shell(
   out.push("# This is an experimental approximation — review before running")
   out.push("# Requires: bash, jq")
   out.push("")
+  if parallel {
+    out.push("_TMPDIR=$(mktemp -d)")
+    out.push("trap 'rm -rf \"$_TMPDIR\"' EXIT")
+    out.push("")
+  }
   emit_helpers(out)
   out.push("")
   // Workflow-level env
@@ -22,20 +28,38 @@ pub fn workflow_to_shell(
     }
     out.push("")
   }
-  // Sort jobs by dependency order and emit as functions
+  // Emit job functions — in parallel mode, outputs go to temp files
   let ordered = topo_sort_jobs(workflow.jobs)
   for job in ordered {
     match job.reusable_workflow {
       Option::Some(callee_path) =>
         emit_reusable_job(job, callee_path, reusable_workflows, out)
-      Option::None => emit_job_function(job, out)
+      Option::None =>
+        if parallel {
+          emit_job_function_parallel(job, out)
+        } else {
+          emit_job_function(job, out)
+        }
     }
   }
-  // Main: call job functions in order
+  // Run section
   out.push("# " + "=".repeat(60))
   out.push("# Run jobs")
   out.push("# " + "=".repeat(60))
   out.push("")
+  if parallel {
+    emit_parallel_run(workflow.jobs, out)
+  } else {
+    emit_sequential_run(ordered, out)
+  }
+  out.join("\n")
+}
+
+///|
+fn emit_sequential_run(
+  ordered : Array[@ar.JobSpec],
+  out : Array[String],
+) -> Unit {
   for job in ordered {
     let fn_name = "job_" + to_shell_var(job.id)
     if job.if_condition.length() > 0 && job.if_condition != "success()" {
@@ -49,7 +73,181 @@ pub fn workflow_to_shell(
     )
     out.push("")
   }
-  out.join("\n")
+}
+
+///|
+fn emit_parallel_run(
+  jobs : Array[@ar.JobSpec],
+  out : Array[String],
+) -> Unit {
+  // Compute layers: each layer is a set of jobs whose deps are all in previous layers
+  let layers = compute_layers(jobs)
+  for layer_idx, layer in layers {
+    if layer.length() == 0 {
+      continue
+    }
+    out.push("# --- Layer " + layer_idx.to_string() + " ---")
+    if layer.length() == 1 {
+      // Single job — run directly
+      let job = layer[0]
+      let fn_name = "job_" + to_shell_var(job.id)
+      let jvar = to_shell_var(job.id)
+      out.push(fn_name + " && _rc=0 || _rc=$?")
+      out.push(
+        "if [ \"$_rc\" -eq 0 ]; then _NEEDS_" + jvar +
+        "_RESULT=success; else _NEEDS_" + jvar + "_RESULT=failure; fi",
+      )
+      // Load outputs from temp file
+      out.push("[ -f \"$_TMPDIR/" + job.id + ".env\" ] && source \"$_TMPDIR/" + job.id + ".env\" || true")
+    } else {
+      // Multiple jobs — run in parallel with &
+      for job in layer {
+        let fn_name = "job_" + to_shell_var(job.id)
+        out.push(
+          "( " + fn_name +
+          " && echo success > \"$_TMPDIR/" + job.id + ".result\"" +
+          " || echo failure > \"$_TMPDIR/" + job.id + ".result\" ) &",
+        )
+      }
+      out.push("wait")
+      out.push("")
+      // Collect results
+      for job in layer {
+        let jvar = to_shell_var(job.id)
+        out.push(
+          "_NEEDS_" + jvar + "_RESULT=$(cat \"$_TMPDIR/" + job.id + ".result\")",
+        )
+        out.push(
+          "[ -f \"$_TMPDIR/" + job.id + ".env\" ] && source \"$_TMPDIR/" + job.id + ".env\"",
+        )
+      }
+    }
+    out.push("")
+  }
+}
+
+///|
+/// Job function variant for parallel mode: write outputs to temp file
+fn emit_job_function_parallel(job : @ar.JobSpec, out : Array[String]) -> Unit {
+  let fn_name = "job_" + to_shell_var(job.id)
+  let label = if job.name.length() > 0 { job.name } else { job.id }
+  out.push("# " + "=".repeat(60))
+  out.push("# Job: " + label)
+  out.push("# " + "=".repeat(60))
+  out.push(fn_name + "() {")
+  if job.needs.length() > 0 {
+    out.push("  # depends on: " + job.needs.join(", "))
+  }
+  match job.matrix {
+    Option::Some(m) =>
+      if m.rows.length() > 0 {
+        out.push("  # matrix — defaulting to first combination:")
+        let first_row = m.rows[0]
+        for key, value in first_row {
+          out.push(
+            "  : \"$\u007bMATRIX_" + to_shell_var(key) + ":=" + value + "}\"",
+          )
+        }
+      }
+    Option::None => ()
+  }
+  out.push("")
+  if job.env.length() > 0 {
+    for key, value in job.env {
+      let resolved = resolve_expr(value)
+      if resolved != value {
+        out.push(
+          "  export " + key + "=" + shell_quote(resolved) + comment_origin(value),
+        )
+      } else {
+        out.push("  export " + key + "=" + shell_quote(value))
+      }
+    }
+    out.push("")
+  }
+  for i, step in job.steps {
+    emit_step(step, i, job.id, out, indent="  ")
+  }
+  // Write outputs to temp file so parent can source them
+  if job.outputs.length() > 0 {
+    out.push("  # Export outputs to temp file for cross-job access")
+    out.push("  {")
+    for key, value in job.outputs {
+      let var_name = "_NEEDS_" + to_shell_var(job.id) + "_OUT_" + to_shell_var(key)
+      let resolved = resolve_expr(value)
+      out.push(
+        "    echo " + var_name + "=" + shell_quote(resolved) + comment_origin(value),
+      )
+    }
+    out.push("  } > \"$_TMPDIR/" + job.id + ".env\"")
+    out.push("")
+  }
+  out.push("}")
+  out.push("")
+}
+
+///|
+fn compute_layers(jobs : Array[@ar.JobSpec]) -> Array[Array[@ar.JobSpec]] {
+  let job_map : Map[String, @ar.JobSpec] = {}
+  for job in jobs {
+    job_map[job.id] = job
+  }
+  let assigned : Map[String, Int] = {} // job_id → layer
+  let layers : Array[Array[@ar.JobSpec]] = []
+  // Assign layers iteratively
+  let mut changed = true
+  while changed {
+    changed = false
+    for job in jobs {
+      if assigned.get(job.id) is Some(_) {
+        continue
+      }
+      if job.needs.length() == 0 {
+        assigned[job.id] = 0
+        changed = true
+      } else {
+        // Check if all deps are assigned
+        let mut all_assigned = true
+        let mut max_dep_layer = 0
+        for need_id in job.needs {
+          match assigned.get(need_id) {
+            Some(layer) => {
+              if layer > max_dep_layer {
+                max_dep_layer = layer
+              }
+            }
+            None => {
+              all_assigned = false
+              break
+            }
+          }
+        }
+        if all_assigned {
+          assigned[job.id] = max_dep_layer + 1
+          changed = true
+        }
+      }
+    }
+  }
+  // Build layer arrays
+  let mut max_layer = 0
+  for _id, layer in assigned {
+    if layer > max_layer {
+      max_layer = layer
+    }
+  }
+  let mut i = 0
+  while i <= max_layer {
+    layers.push([])
+    i += 1
+  }
+  for job in jobs {
+    match assigned.get(job.id) {
+      Some(layer) => layers[layer].push(job)
+      None => () // Unassigned (cycle?) — skip
+    }
+  }
+  layers
 }
 
 ///|

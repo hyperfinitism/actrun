@@ -200,6 +200,7 @@ fn usage_text() -> String {
   "  viz <workflow.yml> --svg     Output SVG (--theme github-dark|github-light|...)\n" +
   "  export <workflow.yml>        Convert workflow to shell script (experimental)\n" +
   "  export <workflow.yml> --job <id>  Export a single job\n" +
+  "  export <workflow.yml> --parallel  Parallelize independent jobs with & and wait\n" +
   "\n" +
   "Other commands:\n" +
   "  list [patterns...]           List workflows and their run commands\n" +
@@ -3645,13 +3646,16 @@ fn handle_export_command(cli_args : Array[String]) -> Int {
     println("error: failed to parse workflow")
     return 1
   }
-  // Parse --job flag
   let mut job_filter = ""
+  let mut parallel = false
   let mut i = 3
   while i < cli_args.length() {
     if cli_args[i] == "--job" && i + 1 < cli_args.length() {
       job_filter = cli_args[i + 1]
       i += 2
+    } else if cli_args[i] == "--parallel" {
+      parallel = true
+      i += 1
     } else {
       i += 1
     }
@@ -3722,7 +3726,11 @@ fn handle_export_command(cli_args : Array[String]) -> Int {
         None => ()
       }
     }
-    println(@lint.workflow_to_shell(workflow, reusable_workflows=reusable))
+    println(
+      @lint.workflow_to_shell(
+        workflow, reusable_workflows=reusable, parallel~,
+      ),
+    )
   }
   0
 }
