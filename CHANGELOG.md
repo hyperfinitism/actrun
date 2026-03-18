@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.17.0
+
+### Security
+
+- Canonicalize paths in `validate_workspace_path` to prevent directory traversal via `..` segments (#8, by @hyperfinitism)
+- Add symlink resolution to `validate_workspace_path_real` to prevent symlink-based path traversal (#10)
+
+### Features
+
+- Support `!cancelled()` in `runs.post-if` and `runs.pre-if` for compatibility with actions like `gradle/actions/setup-gradle` (#9, by @maehata-fairy)
+
+### Refactoring
+
+- Remove stale `src/core/` package (3,630 lines of diverged dead code) (#11)
+
 ## 0.13.0
 
 - Add `local_override_actions`: replace actions with custom shell scripts via `actrun.toml`
