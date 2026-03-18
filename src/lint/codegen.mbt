@@ -31,9 +31,11 @@ pub fn workflow_to_shell(workflow : @ar.WorkflowSpec) -> String {
     if job.if_condition.length() > 0 && job.if_condition != "success()" {
       out.push("# if: " + job.if_condition)
     }
-    out.push(fn_name)
+    out.push(fn_name + " && _rc=0 || _rc=$?")
+    let jvar = to_shell_var(job.id)
     out.push(
-      "_NEEDS_" + to_shell_var(job.id) + "_RESULT=$?  # capture exit status",
+      "if [ \"$_rc\" -eq 0 ]; then _NEEDS_" + jvar +
+      "_RESULT=success; else _NEEDS_" + jvar + "_RESULT=failure; fi",
     )
     out.push("")
   }
@@ -97,7 +99,7 @@ fn emit_job_function(job : @ar.JobSpec, out : Array[String]) -> Unit {
   if job.outputs.length() > 0 {
     out.push("  # Job outputs")
     for key, value in job.outputs {
-      let var_name = "_NEEDS_" + to_shell_var(job.id) + "_" + to_shell_var(key)
+      let var_name = "_NEEDS_" + to_shell_var(job.id) + "_OUT_" + to_shell_var(key)
       let resolved = resolve_expr(value)
       out.push(
         "  " + var_name + "=" + shell_quote(resolved) + comment_origin(value),
@@ -134,7 +136,7 @@ fn emit_job_body(job : @ar.JobSpec, out : Array[String]) -> Unit {
   if job.outputs.length() > 0 {
     out.push("# Job outputs")
     for key, value in job.outputs {
-      let var_name = "_NEEDS_" + to_shell_var(job.id) + "_" + to_shell_var(key)
+      let var_name = "_NEEDS_" + to_shell_var(job.id) + "_OUT_" + to_shell_var(key)
       let resolved = resolve_expr(value)
       out.push(var_name + "=" + shell_quote(resolved) + comment_origin(value))
     }
@@ -620,7 +622,7 @@ fn resolve_needs_ref(expr : String) -> String {
   let rest = String::unsafe_substring(expr, start=6, end=expr.length())
   let parts = split_by_dot(rest)
   if parts.length() >= 3 && parts[1] == "outputs" {
-    "$_NEEDS_" + to_shell_var(parts[0]) + "_" + to_shell_var(parts[2])
+    "$_NEEDS_" + to_shell_var(parts[0]) + "_OUT_" + to_shell_var(parts[2])
   } else if parts.length() >= 2 && parts[1] == "result" {
     "$_NEEDS_" + to_shell_var(parts[0]) + "_RESULT"
   } else {
