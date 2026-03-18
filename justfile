@@ -55,6 +55,16 @@ snapshot-examples-verify:
     moon build src/cmd/actrun --target native
     bash scripts/snapshot_examples_verify.sh
 
+# Update export snapshots (generate shell scripts from examples)
+snapshot-export-update:
+    moon build src/cmd/actrun --target native
+    bash scripts/snapshot_export.sh
+
+# Verify export snapshots match (re-export and compare with golden files)
+snapshot-export-verify:
+    moon build src/cmd/actrun --target native
+    bash scripts/snapshot_export_verify.sh
+
 # Download GHA example snapshots and compare with local golden files
 gha-examples-download run_id:
     gh run download {{run_id}} -n example-snapshots -D _build/gha-examples/{{run_id}}

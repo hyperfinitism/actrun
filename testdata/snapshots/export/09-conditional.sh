@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+# Generated from workflow: conditional
+# This is an experimental approximation — review before running
+# Requires: bash, jq
+
+# --- GitHub Actions expression helpers ---
+gha_contains() { [[ "$1" == *"$2"* ]]; }
+gha_startsWith() { [[ "$1" == "$2"* ]]; }
+gha_endsWith() { [[ "$1" == *"$2" ]]; }
+gha_format() { local fmt="$1"; shift; printf "$fmt" "$@"; }
+gha_join() { local IFS="${2:-,}"; echo "${1[*]}"; }
+gha_toJSON() { jq -n --argjson v "$(printenv | jq -Rs 'split("\n") | map(select(length > 0) | split("=") | {(.[0]): (.[1:] | join("="))}) | add // {}')" '$v'; }
+gha_fromJSON() { echo "$1" | jq -r '.'; }
+gha_hashFiles() { cat "$@" 2>/dev/null | sha256sum | cut -d' ' -f1; }
+gha_success() { [ "${_NEEDS_LAST_RESULT:-success}" = "success" ]; }
+gha_failure() { [ "${_NEEDS_LAST_RESULT:-success}" = "failure" ]; }
+gha_always() { true; }
+gha_cancelled() { false; }
+
+# ============================================================
+# Job: check
+# ============================================================
+job_CHECK() {
+
+  # --- test ---
+  exit 1
+
+  # --- Step 2 ---
+  # if: steps.test.outcome == 'failure'
+  if true; then
+    echo "Test failed but we continued"
+  fi
+
+  # --- Step 3 ---
+  # if: always()
+  if true; then
+    echo "This always runs"
+  fi
+
+  # --- Step 4 ---
+  # if: failure()
+  if [ "$_STEP_FAILED" = "1" ]; then
+    echo "This runs only on failure"
+  fi
+
+}
+
+# ============================================================
+# Run jobs
+# ============================================================
+
+job_CHECK && _rc=0 || _rc=$?
+if [ "$_rc" -eq 0 ]; then _NEEDS_CHECK_RESULT=success; else _NEEDS_CHECK_RESULT=failure; fi
+
