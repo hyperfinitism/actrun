@@ -12,14 +12,30 @@ pub fn workflow_to_shell(workflow : @ar.WorkflowSpec) -> String {
   if workflow.env.length() > 0 {
     out.push("# Workflow environment")
     for key, value in workflow.env {
-      out.push("export " + key + "=" + shell_quote(resolve_expressions(value)))
+      out.push("export " + key + "=" + shell_quote(resolve_expr(value)))
     }
     out.push("")
   }
-  // Sort jobs by dependency order
+  // Sort jobs by dependency order and emit as functions
   let ordered = topo_sort_jobs(workflow.jobs)
   for job in ordered {
-    emit_job(job, workflow, out)
+    emit_job_function(job, out)
+  }
+  // Main: call job functions in order
+  out.push("# " + "=".repeat(60))
+  out.push("# Run jobs")
+  out.push("# " + "=".repeat(60))
+  out.push("")
+  for job in ordered {
+    let fn_name = "job_" + to_shell_var(job.id)
+    if job.if_condition.length() > 0 && job.if_condition != "success()" {
+      out.push("# if: " + job.if_condition)
+    }
+    out.push(fn_name)
+    out.push(
+      "_NEEDS_" + to_shell_var(job.id) + "_RESULT=$?  # capture exit status",
+    )
+    out.push("")
   }
   out.join("\n")
 }
@@ -34,55 +50,93 @@ pub fn job_to_shell(job : @ar.JobSpec, workflow : @ar.WorkflowSpec) -> String {
   out.push("# Job: " + job.id)
   if workflow.env.length() > 0 {
     for key, value in workflow.env {
-      out.push("export " + key + "=" + shell_quote(resolve_expressions(value)))
+      out.push("export " + key + "=" + shell_quote(resolve_expr(value)))
     }
     out.push("")
   }
-  emit_job(job, workflow, out)
+  emit_job_body(job, out)
   out.join("\n")
 }
 
 ///|
-fn emit_job(
-  job : @ar.JobSpec,
-  _workflow : @ar.WorkflowSpec,
-  out : Array[String],
-) -> Unit {
-  let header = "# " + "=".repeat(60)
-  out.push(header)
+fn emit_job_function(job : @ar.JobSpec, out : Array[String]) -> Unit {
+  let fn_name = "job_" + to_shell_var(job.id)
   let label = if job.name.length() > 0 { job.name } else { job.id }
+  out.push("# " + "=".repeat(60))
   out.push("# Job: " + label)
-  out.push(header)
-  out.push("")
-  // Job-level if condition
-  if job.if_condition.length() > 0 && job.if_condition != "success()" {
-    out.push("# if: " + job.if_condition)
-    out.push("")
-  }
+  out.push("# " + "=".repeat(60))
+  out.push(fn_name + "() {")
   // Needs as comment
   if job.needs.length() > 0 {
-    out.push("# depends on: " + job.needs.join(", "))
-    out.push("")
+    out.push("  # depends on: " + job.needs.join(", "))
   }
+  out.push("")
   // Job-level env
   if job.env.length() > 0 {
     for key, value in job.env {
-      out.push("export " + key + "=" + shell_quote(resolve_expressions(value)))
+      let resolved = resolve_expr(value)
+      if resolved != value {
+        out.push(
+          "  export " +
+          key +
+          "=" +
+          shell_quote(resolved) +
+          comment_origin(value),
+        )
+      } else {
+        out.push("  export " + key + "=" + shell_quote(value))
+      }
     }
     out.push("")
   }
   // Steps
   for i, step in job.steps {
-    emit_step(step, i, job.id, out)
+    emit_step(step, i, job.id, out, indent="  ")
   }
-  // Capture job outputs as shell variables for downstream needs
+  // Capture job outputs
   if job.outputs.length() > 0 {
-    out.push(
-      "# Job outputs (available to downstream jobs as _NEEDS_<JOB>_<KEY>)",
-    )
+    out.push("  # Job outputs")
     for key, value in job.outputs {
       let var_name = "_NEEDS_" + to_shell_var(job.id) + "_" + to_shell_var(key)
-      out.push(var_name + "=" + shell_quote(resolve_expressions(value)))
+      let resolved = resolve_expr(value)
+      out.push(
+        "  " + var_name + "=" + shell_quote(resolved) + comment_origin(value),
+      )
+    }
+    out.push("")
+  }
+  out.push("}")
+  out.push("")
+}
+
+///|
+fn emit_job_body(job : @ar.JobSpec, out : Array[String]) -> Unit {
+  if job.needs.length() > 0 {
+    out.push("# depends on: " + job.needs.join(", "))
+    out.push("")
+  }
+  if job.env.length() > 0 {
+    for key, value in job.env {
+      let resolved = resolve_expr(value)
+      if resolved != value {
+        out.push(
+          "export " + key + "=" + shell_quote(resolved) + comment_origin(value),
+        )
+      } else {
+        out.push("export " + key + "=" + shell_quote(value))
+      }
+    }
+    out.push("")
+  }
+  for i, step in job.steps {
+    emit_step(step, i, job.id, out, indent="")
+  }
+  if job.outputs.length() > 0 {
+    out.push("# Job outputs")
+    for key, value in job.outputs {
+      let var_name = "_NEEDS_" + to_shell_var(job.id) + "_" + to_shell_var(key)
+      let resolved = resolve_expr(value)
+      out.push(var_name + "=" + shell_quote(resolved) + comment_origin(value))
     }
     out.push("")
   }
@@ -94,6 +148,7 @@ fn emit_step(
   index : Int,
   job_id : String,
   out : Array[String],
+  indent~ : String,
 ) -> Unit {
   let label = if step.name.length() > 0 {
     step.name
@@ -102,56 +157,78 @@ fn emit_step(
   } else {
     "Step " + (index + 1).to_string()
   }
-  out.push("# --- " + label + " ---")
+  out.push(indent + "# --- " + label + " ---")
   // If condition
+  let mut in_if = false
   if step.if_condition.length() > 0 && step.if_condition != "success()" {
     let cond = translate_if_condition(step.if_condition)
     if cond.length() > 0 {
-      out.push("if " + cond + "; then")
+      out.push(indent + "if " + cond + "; then")
+      in_if = true
     }
   }
+  let body_indent = if in_if { indent + "  " } else { indent }
   // Step env
   if step.env.length() > 0 {
     for key, value in step.env {
-      out.push("export " + key + "=" + shell_quote(resolve_expressions(value)))
+      let resolved = resolve_expr(value)
+      if resolved != value {
+        out.push(
+          body_indent +
+          "export " +
+          key +
+          "=" +
+          shell_quote(resolved) +
+          comment_origin(value),
+        )
+      } else {
+        out.push(body_indent + "export " + key + "=" + shell_quote(value))
+      }
     }
   }
   // Working directory
   match step.working_directory {
-    Option::Some(dir) => out.push("pushd " + shell_quote(dir) + " > /dev/null")
+    Option::Some(dir) =>
+      out.push(body_indent + "pushd " + shell_quote(dir) + " > /dev/null")
     Option::None => ()
   }
   // Body
   match step.uses {
-    Option::Some(uses) => emit_uses_step(uses, step.with_values, out)
+    Option::Some(uses) =>
+      emit_uses_step(uses, step.with_values, out, body_indent)
     Option::None =>
       match step.run {
         Option::Some(script) => {
-          let resolved = resolve_expressions(
-            script.trim(chars=" \t\r\n").to_string(),
-          )
-          // Convert GITHUB_OUTPUT writes to shell variable captures
+          let resolved = resolve_expr(script.trim(chars=" \t\r\n").to_string())
           let converted = convert_github_output(resolved, step.id, job_id)
+          // Add origin comments for lines that changed
+          let final_script = add_origin_comments(
+            script.trim(chars=" \t\r\n").to_string(),
+            converted,
+          )
           if step.continue_on_error == "true" {
-            out.push(converted + " || true")
+            for line_view in final_script.split("\n") {
+              let line = line_view.to_string()
+              out.push(body_indent + line)
+            }
+            // Only last command gets || true
           } else {
-            out.push(converted)
+            for line_view in final_script.split("\n") {
+              out.push(body_indent + line_view.to_string())
+            }
           }
         }
-        Option::None => out.push("# (empty step)")
+        Option::None => out.push(body_indent + "# (empty step)")
       }
   }
   // Pop working directory
   match step.working_directory {
-    Option::Some(_) => out.push("popd > /dev/null")
+    Option::Some(_) => out.push(body_indent + "popd > /dev/null")
     Option::None => ()
   }
   // Close if block
-  if step.if_condition.length() > 0 && step.if_condition != "success()" {
-    let cond = translate_if_condition(step.if_condition)
-    if cond.length() > 0 {
-      out.push("fi")
-    }
+  if in_if {
+    out.push(indent + "fi")
   }
   out.push("")
 }
@@ -161,34 +238,38 @@ fn emit_uses_step(
   uses : String,
   with_values : Map[String, String],
   out : Array[String],
+  indent : String,
 ) -> Unit {
   if uses.contains("actions/checkout") {
-    emit_checkout(with_values, out)
+    emit_checkout(with_values, out, indent)
   } else if uses.contains("actions/setup-node") {
-    emit_setup_node(with_values, out)
+    emit_setup_node(with_values, out, indent)
   } else if uses.contains("actions/setup-python") {
-    emit_setup_python(with_values, out)
+    emit_setup_python(with_values, out, indent)
   } else if uses.contains("actions/upload-artifact") {
-    emit_upload_artifact(with_values, out)
+    emit_upload_artifact(with_values, out, indent)
   } else if uses.contains("actions/download-artifact") {
-    emit_download_artifact(with_values, out)
+    emit_download_artifact(with_values, out, indent)
   } else if uses.contains("actions/cache") {
-    emit_cache(uses, with_values, out)
+    emit_cache(uses, with_values, out, indent)
   } else if uses.contains("extractions/setup-just") {
-    out.push("# " + uses)
-    out.push("# command -v just > /dev/null || cargo install just")
-    out.push("# mise use -g just  # alternative: mise")
+    out.push(indent + "# " + uses)
+    out.push(indent + "# command -v just > /dev/null || cargo install just")
+    out.push(indent + "# mise use -g just  # alternative: mise")
   } else if uses.has_prefix("./") {
-    out.push("# local action: " + uses)
+    out.push(indent + "# local action: " + uses)
     out.push(
-      "# TODO: inline composite action steps from " + uses + "/action.yml",
+      indent +
+      "# TODO: inline composite action steps from " +
+      uses +
+      "/action.yml",
     )
   } else if uses.has_prefix("docker://") {
     let image = String::unsafe_substring(uses, start=9, end=uses.length())
-    out.push("docker run --rm " + shell_quote(image))
+    out.push(indent + "docker run --rm " + shell_quote(image))
   } else {
-    out.push("# TODO: " + uses)
-    out.push("echo \"[skip] " + uses + " — no shell equivalent\"")
+    out.push(indent + "# TODO: " + uses)
+    out.push(indent + "echo \"[skip] " + uses + " — no shell equivalent\"")
   }
 }
 
@@ -196,6 +277,7 @@ fn emit_uses_step(
 fn emit_checkout(
   with_values : Map[String, String],
   out : Array[String],
+  indent : String,
 ) -> Unit {
   let ref_val = get_with(with_values, "ref")
   let path = get_with(with_values, "path")
@@ -207,31 +289,35 @@ fn emit_checkout(
     } else {
       " --depth 1"
     }
+    let resolved_path = resolve_expr(path)
     out.push(
+      indent +
       "git clone" +
       depth +
       " \"$\u007bGITHUB_SERVER_URL:-https://github.com}/$\u007bGITHUB_REPOSITORY}\" " +
-      shell_quote(resolve_expressions(path)),
+      shell_quote(resolved_path),
     )
     if ref_val.length() > 0 {
+      let resolved_ref = resolve_expr(ref_val)
       out.push(
+        indent +
         "(cd " +
-        shell_quote(resolve_expressions(path)) +
+        shell_quote(resolved_path) +
         " && git checkout " +
-        shell_quote(resolve_expressions(ref_val)) +
+        shell_quote(resolved_ref) +
         ")",
       )
     }
   } else if ref_val.length() > 0 {
-    out.push("git checkout " + shell_quote(resolve_expressions(ref_val)))
+    out.push(indent + "git checkout " + shell_quote(resolve_expr(ref_val)))
   } else {
-    out.push("git fetch --depth 1 origin")
+    out.push(indent + "git fetch --depth 1 origin")
     if fetch_depth.length() > 0 && fetch_depth != "1" {
-      out.push("git fetch --depth " + fetch_depth + " origin")
+      out.push(indent + "git fetch --depth " + fetch_depth + " origin")
     }
   }
   if submodules == "true" || submodules == "recursive" {
-    out.push("git submodule update --init --recursive")
+    out.push(indent + "git submodule update --init --recursive")
   }
 }
 
@@ -239,33 +325,38 @@ fn emit_checkout(
 fn emit_setup_node(
   with_values : Map[String, String],
   out : Array[String],
+  indent : String,
 ) -> Unit {
   let version = get_with(with_values, "node-version")
   let version_file = get_with(with_values, "node-version-file")
   let registry = get_with(with_values, "registry-url")
-  out.push("# actions/setup-node — uncomment your preferred version manager:")
+  out.push(
+    indent +
+    "# actions/setup-node — uncomment your preferred version manager:",
+  )
   if version.length() > 0 {
-    out.push("# Node.js " + version)
-    out.push("# mise use node@" + version)
-    out.push("# fnm use " + version + " || fnm install " + version)
-    out.push("# nvm use " + version + " || nvm install " + version)
+    out.push(indent + "# Node.js " + version)
+    out.push(indent + "# mise use node@" + version)
+    out.push(indent + "# fnm use " + version + " || fnm install " + version)
+    out.push(indent + "# nvm use " + version + " || nvm install " + version)
   } else if version_file.length() > 0 {
-    out.push("# Node version from " + version_file)
+    out.push(indent + "# Node version from " + version_file)
     out.push(
+      indent +
       "# mise use node@$(cat " +
       shell_quote(version_file) +
       " | head -1 | tr -d 'v ')",
     )
   } else {
-    out.push("# Using system Node.js")
+    out.push(indent + "# Using system Node.js")
   }
-  out.push("node --version")
+  out.push(indent + "node --version")
   if registry.length() > 0 {
-    out.push("npm config set registry " + shell_quote(registry))
+    out.push(indent + "npm config set registry " + shell_quote(registry))
   }
   let cache = get_with(with_values, "cache")
   if cache.length() > 0 {
-    out.push("# cache: " + cache + " (handled by package manager)")
+    out.push(indent + "# cache: " + cache + " (handled by package manager)")
   }
 }
 
@@ -273,38 +364,45 @@ fn emit_setup_node(
 fn emit_setup_python(
   with_values : Map[String, String],
   out : Array[String],
+  indent : String,
 ) -> Unit {
   let version = get_with(with_values, "python-version")
   out.push(
+    indent +
     "# actions/setup-python — uncomment your preferred version manager:",
   )
   if version.length() > 0 {
-    out.push("# Python " + version)
-    out.push("# mise use python@" + version)
-    out.push("# uv python install " + version)
-    out.push("# pyenv install -s " + version + " && pyenv local " + version)
+    out.push(indent + "# Python " + version)
+    out.push(indent + "# mise use python@" + version)
+    out.push(indent + "# uv python install " + version)
+    out.push(
+      indent + "# pyenv install -s " + version + " && pyenv local " + version,
+    )
   } else {
-    out.push("# Using system Python")
+    out.push(indent + "# Using system Python")
   }
-  out.push("python3 --version")
+  out.push(indent + "python3 --version")
 }
 
 ///|
 fn emit_upload_artifact(
   with_values : Map[String, String],
   out : Array[String],
+  indent : String,
 ) -> Unit {
-  let name = resolve_expressions(get_with(with_values, "name"))
-  let path = resolve_expressions(get_with(with_values, "path"))
+  let name = resolve_expr(get_with(with_values, "name"))
+  let path = resolve_expr(get_with(with_values, "path"))
   let artifact_name = if name.length() > 0 { name } else { "artifact" }
   if path.length() > 0 {
-    out.push("# Upload artifact: " + artifact_name)
+    out.push(indent + "# Upload artifact: " + artifact_name)
     out.push(
+      indent +
       "mkdir -p \"$\u007bACTRUN_ARTIFACT_DIR:-.artifacts}/" +
       artifact_name +
       "\"",
     )
     out.push(
+      indent +
       "cp -r " +
       shell_quote(path) +
       " \"$\u007bACTRUN_ARTIFACT_DIR:-.artifacts}/" +
@@ -312,7 +410,7 @@ fn emit_upload_artifact(
       "/\"",
     )
   } else {
-    out.push("# upload-artifact: no path specified")
+    out.push(indent + "# upload-artifact: no path specified")
   }
 }
 
@@ -320,20 +418,22 @@ fn emit_upload_artifact(
 fn emit_download_artifact(
   with_values : Map[String, String],
   out : Array[String],
+  indent : String,
 ) -> Unit {
-  let name = resolve_expressions(get_with(with_values, "name"))
-  let path = resolve_expressions(get_with(with_values, "path"))
+  let name = resolve_expr(get_with(with_values, "name"))
+  let path = resolve_expr(get_with(with_values, "path"))
   let dest = if path.length() > 0 { path } else { "." }
   if name.length() > 0 {
-    out.push("# Download artifact: " + name)
+    out.push(indent + "# Download artifact: " + name)
     out.push(
+      indent +
       "cp -r \"$\u007bACTRUN_ARTIFACT_DIR:-.artifacts}/" +
       name +
       "/.\" " +
       shell_quote(dest),
     )
   } else {
-    out.push("# download-artifact: no name specified")
+    out.push(indent + "# download-artifact: no name specified")
   }
 }
 
@@ -342,26 +442,26 @@ fn emit_cache(
   uses : String,
   with_values : Map[String, String],
   out : Array[String],
+  indent : String,
 ) -> Unit {
   let key = get_with(with_values, "key")
   let path = get_with(with_values, "path")
-  out.push("# " + uses)
+  out.push(indent + "# " + uses)
   if key.length() > 0 {
-    out.push("# cache key: " + key)
+    out.push(indent + "# cache key: " + key)
   }
   if path.length() > 0 {
-    out.push("# cache path: " + path)
+    out.push(indent + "# cache path: " + path)
   }
-  out.push("# (caching is a no-op in shell export)")
+  out.push(indent + "# (caching is a no-op in shell export)")
 }
 
 ///|
 /// Replace ${{ expr }} with shell variable references
-fn resolve_expressions(text : String) -> String {
+fn resolve_expr(text : String) -> String {
   let prefix = "$\u007b\u007b"
   let suffix = "}}"
   let mut result = text
-  // Iteratively replace ${{ ... }} patterns
   let mut safety = 0
   while safety < 50 {
     safety += 1
@@ -393,45 +493,75 @@ fn resolve_expressions(text : String) -> String {
 }
 
 ///|
-/// Convert a GitHub Actions expression to a shell variable reference
+/// Generate " # ← original" comment if value was transformed
+fn comment_origin(original : String) -> String {
+  if original.contains("$\u007b\u007b") {
+    "  # \u2190 " + original.trim(chars=" \t\r\n").to_string()
+  } else {
+    ""
+  }
+}
+
+///|
+/// Add origin comments to multi-line scripts where lines changed
+fn add_origin_comments(original : String, resolved : String) -> String {
+  let orig_lines : Array[String] = []
+  for v in original.split("\n") {
+    orig_lines.push(v.to_string())
+  }
+  let res_lines : Array[String] = []
+  for v in resolved.split("\n") {
+    res_lines.push(v.to_string())
+  }
+  // If same number of lines, compare per-line
+  if orig_lines.length() == res_lines.length() {
+    let out : Array[String] = []
+    for i, res_line in res_lines {
+      let orig_line = orig_lines[i]
+      if res_line != orig_line && orig_line.contains("$\u007b\u007b") {
+        out.push(
+          res_line + "  # \u2190 " + orig_line.trim(chars=" \t\r").to_string(),
+        )
+      } else {
+        out.push(res_line)
+      }
+    }
+    out.join("\n")
+  } else {
+    resolved
+  }
+}
+
+///|
 fn expr_to_shell_var(expr : String) -> String {
-  // env.VAR → $VAR
   if expr.has_prefix("env.") {
     let var_name = String::unsafe_substring(expr, start=4, end=expr.length())
     return "$" + var_name
   }
-  // secrets.VAR → $SECRET_VAR
   if expr.has_prefix("secrets.") {
     let var_name = String::unsafe_substring(expr, start=8, end=expr.length())
     return "$SECRET_" + to_shell_var(var_name)
   }
-  // github.* → known mappings
   if expr.has_prefix("github.") {
     return resolve_github_context(expr)
   }
-  // matrix.VAR → $MATRIX_VAR
   if expr.has_prefix("matrix.") {
     let var_name = String::unsafe_substring(expr, start=7, end=expr.length())
     return "$MATRIX_" + to_shell_var(var_name)
   }
-  // runner.* → known mappings
   if expr.has_prefix("runner.") {
     let field = String::unsafe_substring(expr, start=7, end=expr.length())
     return "$RUNNER_" + to_shell_var(field)
   }
-  // steps.ID.outputs.KEY → $_STEP_ID_KEY
   if expr.has_prefix("steps.") {
     return resolve_step_ref(expr)
   }
-  // needs.JOB.outputs.KEY → $_NEEDS_JOB_KEY
   if expr.has_prefix("needs.") {
     return resolve_needs_ref(expr)
   }
-  // Boolean/function expressions — pass through as comment
   if expr.contains("(") {
     return "# " + expr
   }
-  // Fallback
   "$\u007b" + expr + "}"
 }
 
@@ -460,7 +590,6 @@ fn resolve_github_context(expr : String) -> String {
   match known.get(expr) {
     Some(v) => v
     None =>
-      // github.event.* → jq from event.json
       if expr.has_prefix("github.event.") {
         let jq_path = "." +
           String::unsafe_substring(expr, start=13, end=expr.length())
@@ -473,14 +602,10 @@ fn resolve_github_context(expr : String) -> String {
 
 ///|
 fn resolve_step_ref(expr : String) -> String {
-  // steps.ID.outputs.KEY → $_STEP_ID_KEY
-  // steps.ID.outcome → $_STEP_ID_OUTCOME
   let rest = String::unsafe_substring(expr, start=6, end=expr.length())
   let parts = split_by_dot(rest)
   if parts.length() >= 3 && parts[1] == "outputs" {
-    let step_id = parts[0]
-    let key = parts[2]
-    "$_STEP_" + to_shell_var(step_id) + "_" + to_shell_var(key)
+    "$_STEP_" + to_shell_var(parts[0]) + "_" + to_shell_var(parts[2])
   } else if parts.length() >= 2 && parts[1] == "outcome" {
     "$_STEP_" + to_shell_var(parts[0]) + "_OUTCOME"
   } else if parts.length() >= 2 && parts[1] == "conclusion" {
@@ -492,14 +617,10 @@ fn resolve_step_ref(expr : String) -> String {
 
 ///|
 fn resolve_needs_ref(expr : String) -> String {
-  // needs.JOB.outputs.KEY → $_NEEDS_JOB_KEY
-  // needs.JOB.result → $_NEEDS_JOB_RESULT
   let rest = String::unsafe_substring(expr, start=6, end=expr.length())
   let parts = split_by_dot(rest)
   if parts.length() >= 3 && parts[1] == "outputs" {
-    let job_id = parts[0]
-    let key = parts[2]
-    "$_NEEDS_" + to_shell_var(job_id) + "_" + to_shell_var(key)
+    "$_NEEDS_" + to_shell_var(parts[0]) + "_" + to_shell_var(parts[2])
   } else if parts.length() >= 2 && parts[1] == "result" {
     "$_NEEDS_" + to_shell_var(parts[0]) + "_RESULT"
   } else {
@@ -508,23 +629,19 @@ fn resolve_needs_ref(expr : String) -> String {
 }
 
 ///|
-/// Convert GITHUB_OUTPUT writes to shell variable assignments
-/// `echo "key=value" >> "$GITHUB_OUTPUT"` → `_STEP_<ID>_<KEY>=value`
 fn convert_github_output(
   script : String,
   step_id : String,
   _job_id : String,
 ) -> String {
-  if not(script.contains("GITHUB_OUTPUT")) {
+  if not(script.contains("GITHUB_OUTPUT")) && not(script.contains("GITHUB_ENV")) {
     return script
   }
   let lines : Array[String] = []
   for line_view in script.split("\n") {
     let line = line_view.to_string()
     let trimmed = line.trim(chars=" \t\r").to_string()
-    // Match: echo "key=value" >> "$GITHUB_OUTPUT"
     if trimmed.contains(">>") && trimmed.contains("GITHUB_OUTPUT") {
-      // Try to extract key=value pattern
       let kv = extract_output_kv(trimmed)
       match kv {
         Option::Some((key, value)) => {
@@ -538,7 +655,6 @@ fn convert_github_output(
         Option::None => lines.push(line)
       }
     } else if trimmed.contains(">>") && trimmed.contains("GITHUB_ENV") {
-      // echo "KEY=value" >> "$GITHUB_ENV" → export KEY=value
       let kv = extract_output_kv(trimmed)
       match kv {
         Option::Some((key, value)) =>
@@ -553,32 +669,26 @@ fn convert_github_output(
 }
 
 ///|
-/// Extract key=value from echo "key=value" >> ... patterns
 fn extract_output_kv(line : String) -> (String, String)? {
-  // Find the quoted content between echo " and " >>
   let echo_idx = find_substr(line, "echo ", 0)
   if echo_idx < 0 {
     return Option::None
   }
   let content_start = echo_idx + 5
-  // Skip opening quote
   let mut start = content_start
   if start < line.length() && line.unsafe_get(start) == '"' {
     start += 1
   }
-  // Find >>
   let redir = find_substr(line, ">>", start)
   if redir < 0 {
     return Option::None
   }
   let mut end = redir
-  // Strip trailing quote and whitespace
   while end > start &&
         (line.unsafe_get(end - 1) == '"' || line.unsafe_get(end - 1) == ' ') {
     end -= 1
   }
   let content = String::unsafe_substring(line, start~, end~)
-  // Find = in content
   let eq = find_substr(content, "=", 0)
   if eq < 0 {
     return Option::None
@@ -593,7 +703,50 @@ fn extract_output_kv(line : String) -> (String, String)? {
 }
 
 ///|
-/// Convert string to valid shell variable name (uppercase, replace non-alnum with _)
+fn translate_if_condition(cond : String) -> String {
+  let expr = unwrap_expr_for_codegen(cond)
+  if expr == "always()" || expr == "always" {
+    return "true"
+  }
+  if expr == "failure()" || expr == "failure" {
+    return "[ \"$_STEP_FAILED\" = \"1\" ]"
+  }
+  if expr == "cancelled()" || expr == "cancelled" {
+    return "false"
+  }
+  if expr == "success()" || expr == "success" {
+    return ""
+  }
+  let resolved = resolve_expr(cond)
+  if resolved != cond {
+    "true # " + resolved + "  # \u2190 " + cond
+  } else {
+    "true # if: " + cond
+  }
+}
+
+///|
+fn unwrap_expr_for_codegen(text : String) -> String {
+  let trimmed = text.trim(chars=" \t\n\r").to_string()
+  let prefix = "$\u007b\u007b"
+  let suffix = "}}"
+  if trimmed.has_prefix(prefix) &&
+    trimmed.has_suffix(suffix) &&
+    trimmed.length() >= 5 {
+    String::unsafe_substring(trimmed, start=3, end=trimmed.length() - 2)
+    .trim(chars=" \t\n\r")
+    .to_string()
+  } else {
+    trimmed
+  }
+}
+
+///|
+fn get_with(values : Map[String, String], key : String) -> String {
+  values.get(key).unwrap_or("")
+}
+
+///|
 fn to_shell_var(s : String) -> String {
   let buf = StringBuilder::new()
   for ch in s {
@@ -651,51 +804,6 @@ fn find_substr(text : String, pattern : String, from : Int) -> Int {
     idx += 1
   }
   -1
-}
-
-///|
-fn translate_if_condition(cond : String) -> String {
-  let expr = unwrap_expression_for_codegen(cond)
-  if expr == "always()" || expr == "always" {
-    return "true"
-  }
-  if expr == "failure()" || expr == "failure" {
-    return "[ \"$_STEP_FAILED\" = \"1\" ]"
-  }
-  if expr == "cancelled()" || expr == "cancelled" {
-    return "false"
-  }
-  if expr == "success()" || expr == "success" {
-    return ""
-  }
-  // Try to resolve expression to shell
-  let resolved = resolve_expressions(cond)
-  if resolved != cond {
-    "true # " + resolved
-  } else {
-    "true # if: " + cond
-  }
-}
-
-///|
-fn unwrap_expression_for_codegen(text : String) -> String {
-  let trimmed = text.trim(chars=" \t\n\r").to_string()
-  let prefix = "$\u007b\u007b"
-  let suffix = "}}"
-  if trimmed.has_prefix(prefix) &&
-    trimmed.has_suffix(suffix) &&
-    trimmed.length() >= 5 {
-    String::unsafe_substring(trimmed, start=3, end=trimmed.length() - 2)
-    .trim(chars=" \t\n\r")
-    .to_string()
-  } else {
-    trimmed
-  }
-}
-
-///|
-fn get_with(values : Map[String, String], key : String) -> String {
-  values.get(key).unwrap_or("")
 }
 
 ///|
