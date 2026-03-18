@@ -208,6 +208,55 @@ patterns = ["src/**", "package.json"]
 
 [affected."lint.yml"]
 patterns = ["src/**", "*.config.*"]
+
+# Lint configuration
+[lint]
+preset = "default"  # default, strict, oss
+ignore_rules = ["unknown-property", "unused-outputs"]
+```
+
+## Lint
+
+```bash
+# Lint all workflows in .github/workflows/
+actrun lint
+
+# Lint specific files
+actrun lint .github/workflows/ci.yml .github/workflows/release.yml
+
+# Strict mode (adds missing-timeout check)
+actrun lint --strict
+
+# Online mode (verify action existence, suggest SHA pins)
+actrun lint --online
+
+# Auto-pin action refs to SHA (rewrites files in-place)
+actrun lint --update-hash
+
+# Use preset (default, strict, oss)
+actrun lint --preset oss
+
+# Suppress a rule
+actrun lint --ignore unknown-property --ignore unused-outputs
+```
+
+## Visualize
+
+```bash
+# ASCII art (terminal)
+actrun viz .github/workflows/ci.yml
+
+# Mermaid text (paste into Markdown)
+actrun viz .github/workflows/ci.yml --mermaid
+
+# Mermaid with step-level subgraphs
+actrun viz .github/workflows/ci.yml --detail
+
+# SVG image
+actrun viz .github/workflows/ci.yml --svg
+
+# SVG with theme
+actrun viz .github/workflows/ci.yml --svg --theme github-light
 ```
 
 ## Combining Flags
