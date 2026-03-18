@@ -198,6 +198,8 @@ fn usage_text() -> String {
   "  viz <workflow.yml> --mermaid Output Mermaid diagram text\n" +
   "  viz <workflow.yml> --detail  Output Mermaid with step-level subgraphs\n" +
   "  viz <workflow.yml> --svg     Output SVG (--theme github-dark|github-light|...)\n" +
+  "  export <workflow.yml>        Convert workflow to shell script (experimental)\n" +
+  "  export <workflow.yml> --job <id>  Export a single job\n" +
   "\n" +
   "Other commands:\n" +
   "  list [patterns...]           List workflows and their run commands\n" +
@@ -3619,6 +3621,62 @@ fn print_errors(errors : Array[String]) -> Unit {
 }
 
 ///|
+fn handle_export_command(cli_args : Array[String]) -> Int {
+  if cli_args.length() < 3 {
+    println("Usage: actrun export <workflow.yml> [--job <id>]")
+    return 1
+  }
+  let path = cli_args[2]
+  let text = match read_text(path) {
+    Some(content) => content
+    None => {
+      println("error: failed to read " + path)
+      return 1
+    }
+  }
+  let parsed = @ar.parse_workflow_yaml(text)
+  if parsed.errors.length() > 0 {
+    for err in parsed.errors {
+      println("error: " + err)
+    }
+    return 1
+  }
+  guard parsed.workflow is Some(workflow) else {
+    println("error: failed to parse workflow")
+    return 1
+  }
+  // Parse --job flag
+  let mut job_filter = ""
+  let mut i = 3
+  while i < cli_args.length() {
+    if cli_args[i] == "--job" && i + 1 < cli_args.length() {
+      job_filter = cli_args[i + 1]
+      i += 2
+    } else {
+      i += 1
+    }
+  }
+  if job_filter.length() > 0 {
+    // Find and export single job
+    let mut found = false
+    for job in workflow.jobs {
+      if job.id == job_filter {
+        println(@lint.job_to_shell(job, workflow))
+        found = true
+        break
+      }
+    }
+    if not(found) {
+      println("error: job '" + job_filter + "' not found")
+      return 1
+    }
+  } else {
+    println(@lint.workflow_to_shell(workflow))
+  }
+  0
+}
+
+///|
 fn handle_viz_command(cli_args : Array[String]) -> Int {
   if cli_args.length() < 3 {
     println(
@@ -6208,6 +6266,13 @@ async fn main {
       (cli_args[1] == "--help" || cli_args[1] == "-h" || cli_args[1] == "help")
     ) {
     println(usage_text())
+    return
+  }
+  if cli_args.length() > 1 && cli_args[1] == "export" {
+    let exit_code = handle_export_command(cli_args)
+    if exit_code != 0 {
+      @xsys.exit(exit_code)
+    }
     return
   }
   if cli_args.length() > 1 && cli_args[1] == "viz" {
