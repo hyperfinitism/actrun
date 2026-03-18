@@ -495,6 +495,10 @@ just gha-compat-compare compat-checkout-artifact.yml _build/gha-compat/<run-id>
 | `src/cmd/actrun/main.mbt` | CLI entry point |
 | `testdata/` | Compatibility fixtures |
 
+## Prior Art
+
+- [actionlint](https://github.com/rhysd/actionlint) — Static checker for GitHub Actions workflow files. `actrun lint` is inspired by its rule design and type system.
+
 ## License
 
 Apache-2.0
