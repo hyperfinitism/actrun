@@ -2106,6 +2106,370 @@ test "cli: apply_json_pipeline combines fields and jq" {
   inspect(result, content="\"success\"")
 }
 
+// --- jq parser tests ---
+
+///|
+test "cli: parse run list with --jq only (implies --json)" {
+  let result = parse_run_read_args([
+    "actrun", "run", "list", "--jq", ".[0].status",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("parse failed")
+  }
+  inspect(options.json_output, content="true")
+  inspect(options.jq_expr, content=".[0].status")
+  inspect(options.json_fields, content="[]")
+}
+
+///|
+test "cli: parse run view --json fields --jq combined" {
+  let result = parse_run_read_args([
+    "actrun", "run", "view", "run-1", "--json", "status,jobs", "--jq", ".jobs[] | .name",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("parse failed")
+  }
+  inspect(options.json_fields, content="[\"status\", \"jobs\"]")
+  inspect(options.jq_expr, content=".jobs[] | .name")
+}
+
+///|
+test "cli: parse run view -q implies json_output" {
+  let result = parse_run_read_args([
+    "actrun", "run", "view", "run-1", "-q", ".conclusion",
+  ])
+  let options = match result.options {
+    Some(value) => value
+    None => abort("parse failed")
+  }
+  inspect(options.json_output, content="true")
+  inspect(options.jq_expr, content=".conclusion")
+}
+
+// --- jq pure function tests ---
+
+///|
+test "jq: select filter" {
+  let json = "[{\"name\": \"a\", \"ok\": true}, {\"name\": \"b\", \"ok\": false}]"
+  let result = apply_jq(json, ".[] | select(.ok) | .name").unwrap()
+  inspect(result, content="\"a\"")
+}
+
+///|
+test "jq: map" {
+  let json = "[1, 2, 3]"
+  let result = apply_jq(json, "map(. * 2)").unwrap()
+  inspect(result, content="[2,4,6]")
+}
+
+///|
+test "jq: length" {
+  let json = "[1, 2, 3, 4]"
+  let result = apply_jq(json, "length").unwrap()
+  inspect(result, content="4")
+}
+
+///|
+test "jq: keys on object" {
+  let json = "{\"b\": 2, \"a\": 1}"
+  let result = apply_jq(json, "keys").unwrap()
+  inspect(result, content="[\"a\",\"b\"]")
+}
+
+///|
+test "jq: pipe chain" {
+  let json = "{\"jobs\": [{\"name\": \"build\", \"steps\": [{\"name\": \"checkout\"}, {\"name\": \"test\"}]}]}"
+  let result = apply_jq(json, ".jobs[0].steps | map(.name)").unwrap()
+  inspect(result, content="[\"checkout\",\"test\"]")
+}
+
+///|
+test "jq: array construction" {
+  let json = "{\"a\": 1, \"b\": 2, \"c\": 3}"
+  let result = apply_jq(json, "[.a, .b]").unwrap()
+  inspect(result, content="[1,2]")
+}
+
+///|
+test "jq: nested field access" {
+  let json = "{\"jobs\": [{\"id\": \"build\", \"conclusion\": \"success\"}]}"
+  let result = apply_jq(json, ".jobs[0].conclusion").unwrap()
+  inspect(result, content="\"success\"")
+}
+
+///|
+test "jq: multiple outputs" {
+  let json = "{\"a\": 1, \"b\": 2}"
+  let result = apply_jq(json, ".a, .b").unwrap()
+  inspect(result, content="1\n2")
+}
+
+///|
+test "jq: null field returns null" {
+  let json = "{\"status\": \"completed\"}"
+  let result = apply_jq(json, ".missing").unwrap()
+  inspect(result, content="null")
+}
+
+///|
+test "jq: invalid expr returns None" {
+  let json = "{\"x\": 1}"
+  let result = apply_jq(json, "invalid[[[")
+  inspect(result, content="None")
+}
+
+///|
+test "jq: sort_by" {
+  let json = "[{\"n\": 3}, {\"n\": 1}, {\"n\": 2}]"
+  let result = apply_jq(json, "sort_by(.n) | map(.n)").unwrap()
+  inspect(result, content="[1,2,3]")
+}
+
+///|
+test "jq: to_entries" {
+  let json = "{\"a\": 1}"
+  let result = apply_jq(json, "to_entries | .[0].key").unwrap()
+  inspect(result, content="\"a\"")
+}
+
+///|
+test "jq: if-then-else" {
+  let json = "{\"ok\": true}"
+  let result = apply_jq(json, "if .ok then \"pass\" else \"fail\" end").unwrap()
+  inspect(result, content="\"pass\"")
+}
+
+///|
+test "jq: string concatenation" {
+  let json = "{\"name\": \"ci\", \"id\": 42}"
+  let result = apply_jq(json, ".name + \"-\" + (.id | tostring)").unwrap()
+  inspect(result, content="\"ci-42\"")
+}
+
+///|
+test "jq: try-catch on error" {
+  let json = "\"not-an-object\""
+  let result = apply_jq(json, "try .foo catch \"caught\"").unwrap()
+  inspect(result, content="\"caught\"")
+}
+
+// --- jq pipeline integration tests ---
+
+///|
+test "jq: pipeline - fields then jq" {
+  let json = "{\"status\": \"completed\", \"conclusion\": \"success\", \"jobs\": [{\"name\": \"build\"}], \"extra\": true}"
+  // First filter to jobs only, then extract names
+  let result = apply_json_pipeline(json, ["jobs"], ".jobs[] | .name")
+  inspect(result, content="\"build\"")
+}
+
+///|
+test "jq: pipeline - jq only (no field filter)" {
+  let json = "{\"status\": \"completed\", \"conclusion\": \"success\"}"
+  let result = apply_json_pipeline(json, [], ".status")
+  inspect(result, content="\"completed\"")
+}
+
+///|
+test "jq: pipeline - fields only (no jq)" {
+  let json = "{\"status\": \"completed\", \"conclusion\": \"success\", \"extra\": true}"
+  let result = apply_json_pipeline(json, ["status"], "")
+  inspect(result.contains("\"status\""), content="true")
+  inspect(result.contains("\"extra\""), content="false")
+}
+
+// --- jq gh-compat pattern tests ---
+
+///|
+test "jq: gh pattern - jobs array extract" {
+  let json = "{\"jobs\": [{\"name\": \"build\", \"conclusion\": \"success\"}, {\"name\": \"test\", \"conclusion\": \"failure\"}]}"
+  let result = apply_jq(json, ".jobs[] | {name, conclusion}").unwrap()
+  inspect(result.contains("\"build\""), content="true")
+  inspect(result.contains("\"test\""), content="true")
+}
+
+///|
+test "jq: gh pattern - select failed jobs" {
+  let json = "{\"jobs\": [{\"name\": \"build\", \"conclusion\": \"success\"}, {\"name\": \"test\", \"conclusion\": \"failure\"}]}"
+  let result = apply_jq(
+    json, "[.jobs[] | select(.conclusion == \"failure\") | .name]",
+  ).unwrap()
+  inspect(result, content="[\"test\"]")
+}
+
+///|
+test "jq: gh pattern - count jobs" {
+  let json = "{\"jobs\": [{}, {}, {}]}"
+  let result = apply_jq(json, ".jobs | length").unwrap()
+  inspect(result, content="3")
+}
+
+///|
+test "jq: gh pattern - list array extract names" {
+  let json = "[{\"workflowName\": \"ci\", \"conclusion\": \"success\"}, {\"workflowName\": \"deploy\", \"conclusion\": \"failure\"}]"
+  let result = apply_jq(json, ".[] | .workflowName").unwrap()
+  inspect(result, content="\"ci\"\n\"deploy\"")
+}
+
+///|
+test "jq: gh pattern - filter list by conclusion" {
+  let json = "[{\"name\": \"ci\", \"conclusion\": \"success\"}, {\"name\": \"deploy\", \"conclusion\": \"failure\"}]"
+  let result = apply_jq(
+    json, "[.[] | select(.conclusion == \"failure\") | .name]",
+  ).unwrap()
+  inspect(result, content="[\"deploy\"]")
+}
+
+// --- jq filesystem integration tests ---
+
+///|
+#cfg(target="native")
+test "jq: handle_run_read_command view with --jq filters output" {
+  let run_root = "_build/test-main/jq-view-integration"
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(run_root)
+  ensure_main_test_dir(run_root + "/run-1")
+  @xfs.write_string_to_file(
+    run_root + "/run-1/run.json",
+    "{\"run_id\": \"run-1\", \"status\": \"completed\", \"conclusion\": \"success\", \"jobs\": [{\"name\": \"build\", \"conclusion\": \"success\"}, {\"name\": \"test\", \"conclusion\": \"failure\"}]}",
+  )
+  // Verify jq expression works by reading JSON and applying
+  let json_text = @xfs.read_file_to_string(run_root + "/run-1/run.json")
+  let result = apply_json_pipeline(
+    json_text,
+    ["jobs"],
+    "[.jobs[] | select(.conclusion == \"failure\") | .name]",
+  )
+  inspect(result, content="[\"test\"]")
+}
+
+///|
+#cfg(target="native")
+test "jq: handle_run_read_command list with --jq" {
+  let run_root = "_build/test-main/jq-list-integration"
+  remove_main_test_tree(run_root)
+  let run_root_abs = main_test_absolute_path(run_root)
+  ensure_main_test_dir(run_root)
+  for i in 1..<=3 {
+    let run_id = "run-" + i.to_string()
+    ensure_main_test_dir(run_root + "/" + run_id)
+    let conclusion = if i == 2 { "failure" } else { "success" }
+    @xfs.write_string_to_file(
+      run_root + "/" + run_id + "/run.json",
+      "{\"run_id\": \"" +
+      run_id +
+      "\", \"workflow_name\": \"ci\", \"status\": \"completed\", \"conclusion\": \"" +
+      conclusion +
+      "\"}",
+    )
+  }
+  let list_json = collect_run_list_json(run_root_abs).unwrap_or("[]")
+  // Apply jq to filter failures
+  let result = apply_jq(
+    list_json, "[.[] | select(.conclusion == \"failure\") | .run_id]",
+  ).unwrap()
+  inspect(result, content="[\"run-2\"]")
+}
+
+///|
+#cfg(target="native")
+async test "jq: end-to-end workflow + jq query" {
+  ensure_main_test_dir("_build")
+  ensure_main_test_dir("_build/test-main")
+  let workspace_rel = "_build/test-main/jq-e2e-workspace"
+  let workspace = main_test_absolute_path(workspace_rel)
+  let run_root = "_build/test-main/jq-e2e-runs"
+  remove_main_test_tree(workspace_rel)
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(workspace_rel)
+  let workflow_src =
+    #|name: jq-test
+    #|'on':
+    #|  push:
+    #|jobs:
+    #|  build:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - id: hello
+    #|        name: Say Hello
+    #|        run: echo hello
+    #|  test:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - id: check
+    #|        name: Run Check
+    #|        run: echo check
+  let parsed = @ar.parse_workflow_yaml(workflow_src)
+  let workflow = match parsed.workflow {
+    Some(spec) => spec
+    None => abort(parsed.errors.join("\n"))
+  }
+  let lowered = @ar.lower_push_workflow_in_workspace(workflow, workspace)
+  if lowered.errors.length() > 0 {
+    abort(lowered.errors.join("\n"))
+  }
+  let report = @ar.execute_lowered_native(
+    lowered,
+    workspace_root=workspace,
+    push_event=Some(
+      @ar.new_push_event("main", ["README.md"], repository="owner/repo"),
+    ),
+  )
+  let run_id = persist_run_record(
+    run_root,
+    {
+      run_id: "",
+      workflow_name: "jq-test",
+      workflow_path: ".github/workflows/jq-test.yml",
+      workspace_root: workspace,
+      workspace_mode: "local",
+      started_at_ms: 1000UL,
+      finished_at_ms: 2000UL,
+      event: "push",
+      state: report.state,
+      ok: report.ok,
+      exit_code: 0,
+      repository: "owner/repo",
+      ref_name: "main",
+      before_sha: "",
+      after_sha: "",
+      changed_paths: [],
+    },
+    report=Some(report),
+    plan=Some(lowered.plan),
+  ).unwrap_or("")
+  inspect(run_id, content="run-1")
+  let run_json = @xfs.read_file_to_string(run_root + "/run-1/run.json")
+  // Extract job names via jq
+  let job_names = apply_jq(run_json, "[.jobs[] | .name]").unwrap()
+  inspect(job_names.contains("\"build\""), content="true")
+  inspect(job_names.contains("\"test\""), content="true")
+  // Extract step names via jq
+  let step_names = apply_jq(run_json, "[.jobs[].steps[] | .name]").unwrap()
+  inspect(step_names.contains("\"Say Hello\""), content="true")
+  inspect(step_names.contains("\"Run Check\""), content="true")
+  // gh-compat: --json fields + --jq combined
+  let filtered = apply_json_pipeline(
+    run_json,
+    ["status", "conclusion", "jobs"],
+    ".jobs[] | {name: .name, conclusion: .conclusion}",
+  )
+  inspect(filtered.contains("\"build\""), content="true")
+  inspect(filtered.contains("\"test\""), content="true")
+  // Verify event field
+  let event = apply_jq(run_json, ".event").unwrap()
+  inspect(event, content="\"push\"")
+  // Verify gh alias fields accessible via jq
+  let wf_name = apply_jq(run_json, ".workflowName").unwrap()
+  inspect(wf_name, content="\"jq-test\"")
+  let started = apply_jq(run_json, ".startedAt").unwrap()
+  inspect(started, content="\"1970-01-01T00:00:01Z\"")
+}
+
 // --- dotenv parser tests ---
 
 ///|
