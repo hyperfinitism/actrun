@@ -48,6 +48,13 @@ struct RunReadOptions {
   artifact_root : String?
   download_dir : String
   json_output : Bool
+  json_fields : Array[String]
+  limit : Int
+  status_filter : String
+  exit_status : Bool
+  verbose : Bool
+  log_failed : Bool
+  job_id : String
 }
 
 ///|
@@ -65,6 +72,7 @@ struct ArtifactReadOptions {
   artifact_name : String
   download_dir : String
   json_output : Bool
+  json_fields : Array[String]
 }
 
 ///|
@@ -82,6 +90,8 @@ struct CacheReadOptions {
   max_age_days : Int
   prune_all : Bool
   json_output : Bool
+  json_fields : Array[String]
+  limit : Int
 }
 
 ///|
@@ -95,6 +105,7 @@ struct WorkflowReadOptions {
   action : String
   repo_root : String?
   json_output : Bool
+  json_fields : Array[String]
 }
 
 ///|
@@ -130,11 +141,22 @@ struct RunTaskFiles {
 }
 
 ///|
+struct RunJobStepRecord {
+  name : String
+  number : Int
+  status : String
+  conclusion : String
+}
+
+///|
 struct RunJobRecord {
   id : String
+  name : String
   status : String
+  conclusion : String
   needs : Array[String]
   task_ids : Array[String]
+  steps : Array[RunJobStepRecord]
 }
 
 ///|
@@ -178,6 +200,7 @@ fn usage_text() -> String {
   "  run view <run-id>            View a workflow run\n" +
   "  run watch <run-id>           Watch a workflow run until it completes\n" +
   "  run logs <run-id>            View logs for a workflow run\n" +
+  "  run delete <run-id>          Delete a workflow run\n" +
   "  run download <run-id>        Download artifacts from a workflow run\n" +
   "\n" +
   "Artifact commands:\n" +
@@ -253,7 +276,13 @@ fn usage_text() -> String {
   "  --wasm-action-root <path>    Wasm action root\n" +
   "\n" +
   "Output flags:\n" +
-  "  --json                       Output in JSON format\n" +
+  "  --json [fields]              Output in JSON format (optionally filter by comma-separated fields)\n" +
+  "  --exit-status                Exit with non-zero status if run failed\n" +
+  "  -v, --verbose                Show job steps (for view)\n" +
+  "  -j, --job <id>               Filter by job ID (for view/logs)\n" +
+  "  --log-failed                 View logs for failed steps only (for logs)\n" +
+  "  -L, --limit <int>            Maximum number of runs to fetch (for list)\n" +
+  "  -s, --status <status>        Filter runs by status/conclusion (for list)\n" +
   "  --task <task-id>             Filter logs by task ID\n" +
   "  --name <name>                Artifact name for download\n" +
   "  --dir <path>                 Download destination directory\n" +
@@ -933,14 +962,27 @@ fn derive_job_status(task_statuses : Array[String]) -> String {
 }
 
 ///|
+fn task_conclusion_to_gh(status : String) -> String {
+  if status == "failed" {
+    "failure"
+  } else if status == "success" || status == "skipped" || status == "cancelled" {
+    status
+  } else {
+    "skipped"
+  }
+}
+
+///|
 fn collect_run_jobs(
   plan : @ar.ExecutionPlan,
   report : @ar.WorkflowRunReport,
 ) -> Array[RunJobRecord] {
   let task_statuses = task_status_map(report)
+  let task_names : Map[String, String] = {}
   let by_job : Map[String, Array[String]] = {}
   let job_order : Array[String] = []
   for task in plan.tasks {
+    task_names[task.id] = task.name
     let current = by_job.get(task.job_id).unwrap_or([])
     if current.length() == 0 {
       job_order.push(task.job_id)
@@ -952,14 +994,27 @@ fn collect_run_jobs(
   for job_id in job_order {
     let task_ids = by_job.get(job_id).unwrap_or([])
     let statuses : Array[String] = []
-    for task_id in task_ids {
-      statuses.push(task_statuses.get(task_id).unwrap_or("skipped"))
+    let steps : Array[RunJobStepRecord] = []
+    for i, task_id in task_ids {
+      let task_status = task_statuses.get(task_id).unwrap_or("skipped")
+      statuses.push(task_status)
+      let step_name = task_names.get(task_id).unwrap_or(task_id)
+      steps.push({
+        name: step_name,
+        number: i + 1,
+        status: "completed",
+        conclusion: task_conclusion_to_gh(task_status),
+      })
     }
+    let conclusion = derive_job_status(statuses)
     jobs.push({
       id: job_id,
-      status: derive_job_status(statuses),
+      name: job_id,
+      status: "completed",
+      conclusion,
       needs: plan.job_needs.get(job_id).unwrap_or([]),
       task_ids,
+      steps,
     })
   }
   jobs
@@ -1145,19 +1200,54 @@ fn collect_workflow_list_records(
 }
 
 ///|
+fn run_job_step_json(step : RunJobStepRecord) -> String {
+  "{ " +
+  "\"name\": " +
+  json_string(step.name) +
+  ", " +
+  "\"number\": " +
+  json_int(step.number) +
+  ", " +
+  "\"status\": " +
+  json_string(step.status) +
+  ", " +
+  "\"conclusion\": " +
+  json_string(step.conclusion) +
+  " }"
+}
+
+///|
+fn run_job_steps_json(steps : Array[RunJobStepRecord]) -> String {
+  let items : Array[String] = []
+  for step in steps {
+    items.push(run_job_step_json(step))
+  }
+  "[" + items.join(", ") + "]"
+}
+
+///|
 fn run_job_json(job : RunJobRecord) -> String {
   "{ " +
   "\"id\": " +
   json_string(job.id) +
   ", " +
+  "\"name\": " +
+  json_string(job.name) +
+  ", " +
   "\"status\": " +
   json_string(job.status) +
+  ", " +
+  "\"conclusion\": " +
+  json_string(job.conclusion) +
   ", " +
   "\"needs\": " +
   json_string_array(job.needs) +
   ", " +
   "\"task_ids\": " +
   json_string_array(job.task_ids) +
+  ", " +
+  "\"steps\": " +
+  run_job_steps_json(job.steps) +
   " }"
 }
 
@@ -1314,6 +1404,20 @@ fn run_record_json(
   let jobs_json = run_jobs_json(jobs)
   let artifacts_json = run_artifacts_json(artifacts)
   let caches_json = run_caches_json(caches)
+  let gh_status = if run_state_is_terminal(record.state) {
+    "completed"
+  } else {
+    "in_progress"
+  }
+  let gh_conclusion = if run_state_is_terminal(record.state) {
+    if record.ok {
+      "success"
+    } else {
+      "failure"
+    }
+  } else {
+    ""
+  }
   "{\n" +
   "  \"run_id\": " +
   json_string(record.run_id) +
@@ -1335,6 +1439,12 @@ fn run_record_json(
   ",\n" +
   "  \"finished_at_ms\": " +
   json_uint64(record.finished_at_ms) +
+  ",\n" +
+  "  \"status\": " +
+  json_string(gh_status) +
+  ",\n" +
+  "  \"conclusion\": " +
+  json_string(gh_conclusion) +
   ",\n" +
   "  \"state\": " +
   json_string(record.state) +
@@ -3306,11 +3416,20 @@ fn parse_run_read_args(args : Array[String]) -> RunReadParseResult {
     return { options: None, errors: ["run subcommand requires an action"] }
   }
   let action = args[2]
+  if action == "rerun" {
+    return {
+      options: None,
+      errors: [
+        "run rerun is not supported; use `actrun workflow run <workflow.yml> --retry` instead",
+      ],
+    }
+  }
   if action != "list" &&
     action != "view" &&
     action != "watch" &&
     action != "logs" &&
-    action != "download" {
+    action != "download" &&
+    action != "delete" {
     return { options: None, errors: ["unknown run subcommand: " + action] }
   }
   let mut run_id = ""
@@ -3333,17 +3452,56 @@ fn parse_run_read_args(args : Array[String]) -> RunReadParseResult {
   let mut artifact_root : String? = None
   let mut download_dir = "."
   let mut json_output = false
+  let json_fields : Array[String] = []
+  let mut limit = 0
+  let mut status_filter = ""
+  let mut exit_status = false
+  let mut verbose = false
+  let mut log_failed = false
+  let mut job_id = ""
   while index < args.length() {
     let arg = args[index]
     if arg == "--json" {
       json_output = true
+      index += 1
+      // Check if next arg is a field list (not a flag)
+      if index < args.length() && not(args[index].has_prefix("--")) {
+        let fields_str = args[index]
+        for part in fields_str.split(",") {
+          let field = part.to_string().trim(chars=" ").to_string()
+          if field.length() > 0 {
+            json_fields.push(field)
+          }
+        }
+        index += 1
+      }
+      continue
+    }
+    if arg == "--exit-status" {
+      exit_status = true
+      index += 1
+      continue
+    }
+    if arg == "--verbose" || arg == "-v" {
+      verbose = true
+      index += 1
+      continue
+    }
+    if arg == "--log-failed" {
+      log_failed = true
       index += 1
       continue
     }
     if arg == "--run-root" ||
       arg == "--task" ||
       arg == "--artifact-root" ||
-      arg == "--dir" {
+      arg == "--dir" ||
+      arg == "--limit" ||
+      arg == "--status" ||
+      arg == "--job" ||
+      arg == "-L" ||
+      arg == "-s" ||
+      arg == "-j" {
       if index + 1 >= args.length() {
         errors.push("missing value for " + arg)
         break
@@ -3355,6 +3513,13 @@ fn parse_run_read_args(args : Array[String]) -> RunReadParseResult {
         artifact_root = Some(value)
       } else if arg == "--dir" {
         download_dir = value
+      } else if arg == "--limit" || arg == "-L" {
+        let parsed = @strconv.parse_int64(value) catch { _ => 0L }
+        limit = parsed.to_int()
+      } else if arg == "--status" || arg == "-s" {
+        status_filter = value
+      } else if arg == "--job" || arg == "-j" {
+        job_id = value
       } else {
         task_id = Some(value)
       }
@@ -3395,6 +3560,13 @@ fn parse_run_read_args(args : Array[String]) -> RunReadParseResult {
       artifact_root,
       download_dir,
       json_output,
+      json_fields,
+      limit,
+      status_filter,
+      exit_status,
+      verbose,
+      log_failed,
+      job_id,
     }),
     errors: [],
   }
@@ -3422,12 +3594,22 @@ fn parse_artifact_read_args(args : Array[String]) -> ArtifactReadParseResult {
   let mut artifact_name = ""
   let mut download_dir = "."
   let mut json_output = false
+  let json_fields : Array[String] = []
   let mut index = 4
   while index < args.length() {
     let arg = args[index]
     if arg == "--json" {
       json_output = true
       index += 1
+      if index < args.length() && not(args[index].has_prefix("--")) {
+        for part in args[index].split(",") {
+          let field = part.to_string().trim(chars=" ").to_string()
+          if field.length() > 0 {
+            json_fields.push(field)
+          }
+        }
+        index += 1
+      }
       continue
     }
     if arg == "--run-root" ||
@@ -3483,6 +3665,7 @@ fn parse_artifact_read_args(args : Array[String]) -> ArtifactReadParseResult {
       artifact_name,
       download_dir,
       json_output,
+      json_fields,
     }),
     errors: [],
   }
@@ -3504,12 +3687,23 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
   let mut max_age_days = 0
   let mut prune_all = false
   let mut json_output = false
+  let json_fields : Array[String] = []
+  let mut limit = 0
   let mut index = 3
   while index < args.length() {
     let arg = args[index]
     if arg == "--json" {
       json_output = true
       index += 1
+      if index < args.length() && not(args[index].has_prefix("--")) {
+        for part in args[index].split(",") {
+          let field = part.to_string().trim(chars=" ").to_string()
+          if field.length() > 0 {
+            json_fields.push(field)
+          }
+        }
+        index += 1
+      }
       continue
     }
     if arg == "--all" {
@@ -3520,7 +3714,9 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
     if arg == "--cache-root" ||
       arg == "--key" ||
       arg == "--workspace-key" ||
-      arg == "--max-age" {
+      arg == "--max-age" ||
+      arg == "--limit" ||
+      arg == "-L" {
       if index + 1 >= args.length() {
         errors.push("missing value for " + arg)
         break
@@ -3539,6 +3735,9 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
         } noraise {
           v => v
         }
+      } else if arg == "--limit" || arg == "-L" {
+        let parsed = @strconv.parse_int64(value) catch { _ => 0L }
+        limit = parsed.to_int()
       } else {
         workspace_key_filter = value
       }
@@ -3570,6 +3769,8 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
       max_age_days,
       prune_all,
       json_output,
+      json_fields,
+      limit,
     }),
     errors: [],
   }
@@ -3587,12 +3788,22 @@ fn parse_workflow_read_args(args : Array[String]) -> WorkflowReadParseResult {
   }
   let mut repo_root : String? = None
   let mut json_output = false
+  let json_fields : Array[String] = []
   let mut index = 3
   while index < args.length() {
     let arg = args[index]
     if arg == "--json" {
       json_output = true
       index += 1
+      if index < args.length() && not(args[index].has_prefix("--")) {
+        for part in args[index].split(",") {
+          let field = part.to_string().trim(chars=" ").to_string()
+          if field.length() > 0 {
+            json_fields.push(field)
+          }
+        }
+        index += 1
+      }
       continue
     }
     if arg == "--repo" {
@@ -3614,7 +3825,7 @@ fn parse_workflow_read_args(args : Array[String]) -> WorkflowReadParseResult {
   if errors.length() > 0 {
     return { options: None, errors }
   }
-  { options: Some({ action, repo_root, json_output }), errors: [] }
+  { options: Some({ action, repo_root, json_output, json_fields }), errors: [] }
 }
 
 ///|
@@ -4808,22 +5019,122 @@ fn run_json_texts_in_order(run_root : String) -> Array[String] {
 }
 
 ///|
-fn collect_run_list_json(run_root : String) -> String? {
-  let items = run_json_texts_in_order(run_root)
-  Some("[" + items.join(", ") + "]\n")
+fn run_json_matches_status(json_text : String, status_filter : String) -> Bool {
+  if status_filter.length() == 0 {
+    return true
+  }
+  let payload = @json.parse(json_text) catch { _ => return false }
+  guard payload is Object(_) else { return false }
+  let conclusion = run_json_string(payload, "conclusion")
+  let status = run_json_string(payload, "status")
+  let state = run_json_string(payload, "state")
+  status_filter == conclusion ||
+  status_filter == status ||
+  status_filter == state
 }
 
 ///|
-fn format_run_list_text(run_root : String) -> String? {
-  let run_json_texts = run_json_texts_in_order(run_root)
+fn filtered_run_json_texts(
+  run_root : String,
+  status_filter : String,
+  limit : Int,
+) -> Array[String] {
+  let all = run_json_texts_in_order(run_root)
+  let result : Array[String] = []
+  for text in all {
+    if not(run_json_matches_status(text, status_filter)) {
+      continue
+    }
+    result.push(text)
+    if limit > 0 && result.length() >= limit {
+      break
+    }
+  }
+  result
+}
+
+///|
+fn collect_run_list_json(
+  run_root : String,
+  status_filter? : String = "",
+  limit? : Int = 0,
+  json_fields? : Array[String] = [],
+) -> String? {
+  let items = filtered_run_json_texts(run_root, status_filter, limit)
+  if json_fields.length() == 0 {
+    return Some("[" + items.join(", ") + "]\n")
+  }
+  let filtered_items : Array[String] = []
+  for item in items {
+    match filter_json_fields(item, json_fields) {
+      Some(filtered) => filtered_items.push(filtered)
+      None => filtered_items.push(item)
+    }
+  }
+  Some("[" + filtered_items.join(", ") + "]\n")
+}
+
+///|
+fn format_elapsed(started_ms : String, finished_ms : String) -> String {
+  if started_ms.length() == 0 || finished_ms.length() == 0 {
+    return ""
+  }
+  let s = @strconv.parse_int64(started_ms) catch { _ => return "" }
+  let f = @strconv.parse_int64(finished_ms) catch { _ => return "" }
+  let diff_ms = f - s
+  if diff_ms >= 60000L {
+    (diff_ms / 60000L).to_string() +
+    "m" +
+    (diff_ms % 60000L / 1000L).to_string() +
+    "s"
+  } else {
+    (diff_ms / 1000L).to_string() + "s"
+  }
+}
+
+///|
+fn format_run_list_text(
+  run_root : String,
+  status_filter? : String = "",
+  limit? : Int = 0,
+) -> String? {
+  let run_json_texts = filtered_run_json_texts(run_root, status_filter, limit)
   let lines : Array[String] = []
   for run_json_text in run_json_texts {
     let payload = @json.parse(run_json_text) catch { _ => return None }
     guard payload is Object(_) else { return None }
     let run_id = run_json_string(payload, "run_id")
-    let state = run_json_string(payload, "state")
+    let conclusion = run_json_string(payload, "conclusion")
+    let status = run_json_string(payload, "status")
+    let display_status = if status.length() > 0 {
+      status
+    } else {
+      run_json_string(payload, "state")
+    }
+    let display_conclusion = if conclusion.length() > 0 {
+      conclusion
+    } else {
+      ""
+    }
     let workflow_name = run_json_string(payload, "workflow_name")
-    lines.push(run_id + "\t" + state + "\t" + workflow_name)
+    let workspace_mode = run_json_string(payload, "workspace_mode")
+    let elapsed = format_elapsed(
+      run_json_number_text(payload, "started_at_ms"),
+      run_json_number_text(payload, "finished_at_ms"),
+    )
+    lines.push(
+      display_status +
+      "\t" +
+      display_conclusion +
+      "\t" +
+      workflow_name +
+      "\t" +
+      workspace_mode +
+      "\t" +
+      run_id +
+      "\t" +
+      elapsed,
+    )
   }
   Some(if lines.length() == 0 { "" } else { lines.join("\n") + "\n" })
 }
@@ -5117,60 +5428,112 @@ async fn sync_dirty_changes(
 }
 
 ///|
-fn format_run_view_text(run_json_text : String) -> String? {
+fn conclusion_mark(conclusion : String) -> String {
+  if conclusion == "success" {
+    "X"
+  } else if conclusion == "failure" {
+    "!"
+  } else if conclusion == "cancelled" {
+    "-"
+  } else if conclusion == "skipped" {
+    "-"
+  } else {
+    "*"
+  }
+}
+
+///|
+fn format_run_view_text(
+  run_json_text : String,
+  verbose? : Bool = false,
+  job_id? : String = "",
+) -> String? {
   let payload = @json.parse(run_json_text) catch { _ => return None }
   guard payload is Object(_) else { return None }
   let lines : Array[String] = []
   let run_id = run_json_string(payload, "run_id")
   let workflow_name = run_json_string(payload, "workflow_name")
-  let state = run_json_string(payload, "state")
-  let workspace_mode = run_json_string(payload, "workspace_mode")
-  lines.push("run_id=\{run_id}")
-  lines.push("workflow=\{workflow_name}")
-  lines.push("state=\{state}")
-  lines.push("workspace_mode=\{workspace_mode}")
-  let started_at_ms = run_json_number_text(payload, "started_at_ms")
-  if started_at_ms.length() > 0 {
-    lines.push("started_at_ms=\{started_at_ms}")
+  let conclusion = run_json_string(payload, "conclusion")
+  let status = run_json_string(payload, "status")
+  let display_conclusion = if conclusion.length() > 0 {
+    conclusion
+  } else {
+    run_json_string(payload, "state")
   }
-  let finished_at_ms = run_json_number_text(payload, "finished_at_ms")
-  if finished_at_ms.length() > 0 {
-    lines.push("finished_at_ms=\{finished_at_ms}")
+  let mark = conclusion_mark(display_conclusion)
+  let started_text = run_json_number_text(payload, "started_at_ms")
+  let finished_text = run_json_number_text(payload, "finished_at_ms")
+  let elapsed = if started_text.length() > 0 && finished_text.length() > 0 {
+    let s = @strconv.parse_int64(started_text) catch { _ => 0L }
+    let f = @strconv.parse_int64(finished_text) catch { _ => 0L }
+    let diff_ms = f - s
+    if diff_ms >= 60000L {
+      (diff_ms / 60000L).to_string() + "m"
+    } else {
+      (diff_ms / 1000L).to_string() + "s"
+    }
+  } else {
+    ""
   }
-  let exit_code = run_json_number_text(payload, "exit_code")
-  if exit_code.length() > 0 {
-    lines.push("exit_code=\{exit_code}")
+  let elapsed_suffix = if elapsed.length() > 0 { " in " + elapsed } else { "" }
+  let status_suffix = if status == "completed" {
+    display_conclusion + elapsed_suffix
+  } else {
+    status
   }
+  lines.push(mark + " " + workflow_name + " (" + run_id + ") " + status_suffix)
+  lines.push("")
+  lines.push("JOBS")
   for job_json in run_json_array(payload, "jobs") {
-    if job_json is { "id": String(id), "status": String(status), .. } {
-      lines.push("job/\{id}=\{status}")
+    guard job_json is { "id": String(id), .. } else { continue }
+    if job_id.length() > 0 && id != job_id {
+      continue
+    }
+    let job_name = run_json_string(job_json, "name")
+    let display_name = if job_name.length() > 0 { job_name } else { id }
+    let job_conclusion = run_json_string(job_json, "conclusion")
+    let job_display = if job_conclusion.length() > 0 {
+      job_conclusion
+    } else {
+      run_json_string(job_json, "status")
+    }
+    let job_mark = conclusion_mark(job_display)
+    lines.push("  " + job_mark + " " + display_name + " (" + job_display + ")")
+    if verbose {
+      for step_json in run_json_array(job_json, "steps") {
+        guard step_json is { "name": String(step_name), .. } else { continue }
+        let step_conclusion = run_json_string(step_json, "conclusion")
+        let step_display = if step_conclusion.length() > 0 {
+          step_conclusion
+        } else {
+          run_json_string(step_json, "status")
+        }
+        let step_mark = conclusion_mark(step_display)
+        lines.push(
+          "    " + step_mark + " " + step_name + " (" + step_display + ")",
+        )
+      }
     }
   }
-  for artifact_json in run_json_array(payload, "artifacts") {
-    if artifact_json is { "name": String(name), "files": Array(files), .. } {
-      let paths : Array[String] = []
-      for file in files {
-        if file is String(path) {
-          paths.push(path)
-        }
+  let artifacts = run_json_array(payload, "artifacts")
+  if artifacts.length() > 0 {
+    lines.push("")
+    lines.push("ARTIFACTS")
+    for artifact_json in artifacts {
+      if artifact_json is { "name": String(name), .. } {
+        lines.push("  " + name)
       }
-      let joined_paths = paths.join(",")
-      lines.push("artifact/\{name}=\{joined_paths}")
-    }
-  }
-  for cache_json in run_json_array(payload, "caches") {
-    if cache_json is { "key": String(key), "files": Array(files), .. } {
-      let paths : Array[String] = []
-      for file in files {
-        if file is String(path) {
-          paths.push(path)
-        }
-      }
-      let joined_paths = paths.join(",")
-      lines.push("cache/\{key}=\{joined_paths}")
     }
   }
   Some(lines.join("\n") + "\n")
+}
+
+///|
+fn task_matches_job(task_id : String, job_filter : String) -> Bool {
+  if job_filter.length() == 0 {
+    return true
+  }
+  task_id.has_prefix(job_filter + "/")
 }
 
 ///|
@@ -5178,6 +5541,8 @@ fn format_run_logs_text(
   run_dir : String,
   run_json_text : String,
   task_id? : String? = None,
+  log_failed? : Bool = false,
+  job_filter? : String = "",
 ) -> String? {
   let payload = @json.parse(run_json_text) catch { _ => return None }
   guard payload is Object(_) else { return None }
@@ -5189,6 +5554,15 @@ fn format_run_logs_text(
       Some(expected) if expected != id => continue
       Some(_) => matched_task = true
       None => ()
+    }
+    if not(task_matches_job(id, job_filter)) {
+      continue
+    }
+    if log_failed {
+      let task_status = run_json_string(task_json, "status")
+      if task_status != "failed" {
+        continue
+      }
     }
     let stdout_path = run_json_string(task_json, "stdout_path")
     if stdout_path.length() > 0 {
@@ -5237,6 +5611,8 @@ fn run_task_logs_json(
   run_dir : String,
   run_json_text : String,
   task_id? : String? = None,
+  log_failed? : Bool = false,
+  job_filter? : String = "",
 ) -> String? {
   let payload = @json.parse(run_json_text) catch { _ => return None }
   guard payload is Object(_) else { return None }
@@ -5248,6 +5624,15 @@ fn run_task_logs_json(
       Some(expected) if expected != id => continue
       Some(_) => matched_task = true
       None => ()
+    }
+    if not(task_matches_job(id, job_filter)) {
+      continue
+    }
+    if log_failed {
+      let task_status = run_json_string(task_json, "status")
+      if task_status != "failed" {
+        continue
+      }
     }
     let stdout_path = run_json_string(task_json, "stdout_path")
     let stdout = if stdout_path.length() > 0 {
@@ -5333,7 +5718,11 @@ fn handle_workflow_read_command(options : WorkflowReadOptions) -> Int {
   let repo_root = absolute_run_store_path(options.repo_root.unwrap_or("."))
   let records = collect_workflow_list_records(repo_root)
   if options.json_output {
-    println(workflow_list_json(records))
+    let json_text = workflow_list_json(records)
+    match filter_json_array_fields(json_text, options.json_fields) {
+      Some(filtered) => println(filtered.trim_end(chars="\n").to_string())
+      None => println(json_text)
+    }
     return 0
   }
   let text = format_workflow_list_text(records)
@@ -5357,7 +5746,10 @@ fn handle_artifact_read_command(options : ArtifactReadOptions) -> Int {
   }
   if options.action == "list" {
     if options.json_output {
-      println(artifacts_json_text.trim_end(chars="\n").to_string())
+      match filter_json_array_fields(artifacts_json_text, options.json_fields) {
+        Some(filtered) => println(filtered.trim_end(chars="\n").to_string())
+        None => println(artifacts_json_text.trim_end(chars="\n").to_string())
+      }
       return 0
     }
     match format_artifact_list_text(artifacts_json_text) {
@@ -5471,11 +5863,20 @@ fn handle_cache_read_command(options : CacheReadOptions) -> Int {
     }
     prune_empty_workspace_cache_dirs(cache_root)
   }
+  let limited = if options.limit > 0 && filtered.length() > options.limit {
+    filtered.iter().take(options.limit).collect()
+  } else {
+    filtered
+  }
   if options.json_output {
-    println(cache_list_json(filtered))
+    let json_text = cache_list_json(limited)
+    match filter_json_array_fields(json_text, options.json_fields) {
+      Some(result) => println(result.trim_end(chars="\n").to_string())
+      None => println(json_text)
+    }
     return 0
   }
-  let text = format_cache_list_text(filtered)
+  let text = format_cache_list_text(limited)
   if text.length() > 0 {
     println(text.trim_end(chars="\n").to_string())
   }
@@ -5560,6 +5961,63 @@ fn handle_run_download_command(
 }
 
 ///|
+fn filter_json_fields(json_text : String, fields : Array[String]) -> String? {
+  if fields.length() == 0 {
+    return Some(json_text)
+  }
+  let payload = @json.parse(json_text) catch { _ => return None }
+  guard payload is Object(obj) else { return None }
+  let filtered : Map[String, Json] = {}
+  for field in fields {
+    match obj.get(field) {
+      Some(value) => filtered[field] = value
+      None => ()
+    }
+  }
+  Some(Json::object(filtered).stringify(indent=2))
+}
+
+///|
+fn filter_json_array_fields(
+  json_text : String,
+  fields : Array[String],
+) -> String? {
+  if fields.length() == 0 {
+    return Some(json_text)
+  }
+  let payload = @json.parse(json_text) catch { _ => return None }
+  guard payload is Array(items) else { return None }
+  let filtered : Array[Json] = []
+  for item in items {
+    guard item is Object(obj) else {
+      filtered.push(item)
+      continue
+    }
+    let kept : Map[String, Json] = {}
+    for field in fields {
+      match obj.get(field) {
+        Some(value) => kept[field] = value
+        None => ()
+      }
+    }
+    filtered.push(Json::object(kept))
+  }
+  Some(Json::array(filtered).stringify(indent=2))
+}
+
+///|
+fn run_view_exit_code(run_json_text : String) -> Int {
+  let payload = @json.parse(run_json_text) catch { _ => return 1 }
+  guard payload is Object(_) else { return 1 }
+  let conclusion = run_json_string(payload, "conclusion")
+  if conclusion == "success" {
+    0
+  } else {
+    1
+  }
+}
+
+///|
 fn run_state_is_terminal(state : String) -> Bool {
   state == "completed" ||
   state == "partial_failed" ||
@@ -5613,10 +6071,18 @@ async fn handle_run_watch_command(options : RunReadOptions) -> Int {
         run_state_exit_code(state)
       }
       if options.json_output {
-        println(run_json_text.trim_end(chars="\n").to_string())
+        match filter_json_fields(run_json_text, options.json_fields) {
+          Some(filtered) => println(filtered.trim_end(chars="\n").to_string())
+          None => println(run_json_text.trim_end(chars="\n").to_string())
+        }
         return exit_code
       }
-      match format_run_view_text(run_json_text) {
+      match
+        format_run_view_text(
+          run_json_text,
+          verbose=options.verbose,
+          job_id=options.job_id,
+        ) {
         Some(text) => {
           println(text.trim_end(chars="\n").to_string())
           return exit_code
@@ -5635,9 +6101,30 @@ async fn handle_run_watch_command(options : RunReadOptions) -> Int {
 ///|
 fn handle_run_read_command(options : RunReadOptions) -> Int {
   let run_root = options.run_root.unwrap_or(default_run_root())
+  if options.action == "delete" {
+    let run_dir = join_path(run_root, options.run_id)
+    if not(@xfs.path_exists(run_dir)) {
+      print_errors(["run not found: " + options.run_id])
+      return 1
+    }
+    if not(remove_tree(run_dir)) {
+      print_errors(["failed to delete " + run_dir])
+      return 1
+    }
+    if options.json_output {
+      println("{ \"run_id\": " + json_string(options.run_id) + " }")
+    }
+    return 0
+  }
   if options.action == "list" {
     if options.json_output {
-      match collect_run_list_json(run_root) {
+      match
+        collect_run_list_json(
+          run_root,
+          status_filter=options.status_filter,
+          limit=options.limit,
+          json_fields=options.json_fields,
+        ) {
         Some(text) => {
           println(text.trim_end(chars="\n").to_string())
           return 0
@@ -5648,7 +6135,12 @@ fn handle_run_read_command(options : RunReadOptions) -> Int {
         }
       }
     }
-    match format_run_list_text(run_root) {
+    match
+      format_run_list_text(
+        run_root,
+        status_filter=options.status_filter,
+        limit=options.limit,
+      ) {
       Some(text) => {
         if text.length() > 0 {
           println(text.trim_end(chars="\n").to_string())
@@ -5671,14 +6163,27 @@ fn handle_run_read_command(options : RunReadOptions) -> Int {
     }
   }
   if options.action == "view" {
-    if options.json_output {
-      println(run_json_text.trim_end(chars="\n").to_string())
-      return 0
+    let view_exit = if options.exit_status {
+      run_view_exit_code(run_json_text)
+    } else {
+      0
     }
-    match format_run_view_text(run_json_text) {
+    if options.json_output {
+      match filter_json_fields(run_json_text, options.json_fields) {
+        Some(filtered) => println(filtered.trim_end(chars="\n").to_string())
+        None => println(run_json_text.trim_end(chars="\n").to_string())
+      }
+      return view_exit
+    }
+    match
+      format_run_view_text(
+        run_json_text,
+        verbose=options.verbose,
+        job_id=options.job_id,
+      ) {
       Some(text) => {
         println(text.trim_end(chars="\n").to_string())
-        return 0
+        return view_exit
       }
       None => {
         print_errors(["failed to parse " + run_json_path])
@@ -5700,7 +6205,14 @@ fn handle_run_read_command(options : RunReadOptions) -> Int {
     )
   }
   if options.json_output {
-    match run_task_logs_json(run_dir, run_json_text, task_id=options.task_id) {
+    match
+      run_task_logs_json(
+        run_dir,
+        run_json_text,
+        task_id=options.task_id,
+        log_failed=options.log_failed,
+        job_filter=options.job_id,
+      ) {
       Some(text) => {
         println(text)
         return 0
@@ -5717,7 +6229,14 @@ fn handle_run_read_command(options : RunReadOptions) -> Int {
       }
     }
   }
-  match format_run_logs_text(run_dir, run_json_text, task_id=options.task_id) {
+  match
+    format_run_logs_text(
+      run_dir,
+      run_json_text,
+      task_id=options.task_id,
+      log_failed=options.log_failed,
+      job_filter=options.job_id,
+    ) {
     Some(text) => {
       println(text.trim_end(chars="\n").to_string())
       0

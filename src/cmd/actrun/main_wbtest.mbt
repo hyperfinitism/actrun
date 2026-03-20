@@ -610,7 +610,7 @@ async test "cli: persist run record stores task logs and summaries" {
   )
   inspect(run_json.contains("\"jobs\": [{"), content="true")
   inspect(run_json.contains("\"id\": \"build\""), content="true")
-  inspect(run_json.contains("\"status\": \"success\""), content="true")
+  inspect(run_json.contains("\"conclusion\": \"success\""), content="true")
   inspect(run_json.contains("\"artifacts\": [{"), content="true")
   inspect(run_json.contains("\"name\": \"report\""), content="true")
   inspect(run_json.contains("\"files\": [\"result.txt\"]"), content="true")
@@ -622,7 +622,7 @@ async test "cli: persist run record stores task logs and summaries" {
   )
   let jobs_json = @xfs.read_file_to_string(run_root + "/run-1/jobs.json")
   inspect(jobs_json.contains("\"id\": \"build\""), content="true")
-  inspect(jobs_json.contains("\"status\": \"success\""), content="true")
+  inspect(jobs_json.contains("\"conclusion\": \"success\""), content="true")
   let artifacts_json = @xfs.read_file_to_string(
     run_root + "/run-1/artifacts.json",
   )
@@ -649,15 +649,11 @@ async test "cli: persist run record stores task logs and summaries" {
     content="summary-run-store",
   )
   let view_text = format_run_view_text(run_json).unwrap_or("")
-  inspect(view_text.contains("run_id=run-1"), content="true")
-  inspect(view_text.contains("workflow=ci"), content="true")
-  inspect(view_text.contains("state=completed"), content="true")
-  inspect(view_text.contains("job/build=success"), content="true")
-  inspect(view_text.contains("artifact/report=result.txt"), content="true")
-  inspect(
-    view_text.contains("cache/run-store-basic-key=artifacts/result.txt"),
-    content="true",
-  )
+  inspect(view_text.contains("(run-1)"), content="true")
+  inspect(view_text.contains("ci"), content="true")
+  inspect(view_text.contains("success"), content="true")
+  inspect(view_text.contains("X build (success)"), content="true")
+  inspect(view_text.contains("report"), content="true")
   let logs_text = format_run_logs_text(
     run_root + "/run-1",
     run_json,
@@ -689,8 +685,10 @@ async test "cli: persist run record stores task logs and summaries" {
   @xfs.write_string_to_file(run_root_list + "/run-1/run.json", run_json_one)
   @xfs.write_string_to_file(run_root_list + "/run-2/run.json", run_json_two)
   let list_text = format_run_list_text(run_root_list_abs).unwrap_or("")
-  inspect(list_text.contains("run-2\tfailed\tbeta"), content="true")
-  inspect(list_text.contains("run-1\tcompleted\talpha"), content="true")
+  inspect(list_text.contains("beta"), content="true")
+  inspect(list_text.contains("run-2"), content="true")
+  inspect(list_text.contains("alpha"), content="true")
+  inspect(list_text.contains("run-1"), content="true")
   let list_json = collect_run_list_json(run_root_list_abs).unwrap_or("")
   inspect(list_json.contains("\"run_id\": \"run-1\""), content="true")
   inspect(list_json.contains("\"run_id\": \"run-2\""), content="true")
@@ -708,6 +706,13 @@ async test "cli: persist run record stores task logs and summaries" {
     artifact_root: None,
     download_dir: run_download_dir,
     json_output: false,
+    json_fields: [],
+    limit: 0,
+    status_filter: "",
+    exit_status: false,
+    verbose: false,
+    log_failed: false,
+    job_id: "",
   })
   inspect(run_download_exit, content="0")
   inspect(
@@ -724,6 +729,7 @@ async test "cli: persist run record stores task logs and summaries" {
     artifact_name: "report",
     download_dir,
     json_output: false,
+    json_fields: [],
   })
   inspect(download_exit, content="0")
   inspect(
@@ -756,6 +762,8 @@ async test "cli: persist run record stores task logs and summaries" {
     max_age_days: 0,
     prune_all: false,
     json_output: true,
+    json_fields: [],
+    limit: 0,
   })
   inspect(cache_list_exit, content="0")
   let cache_prune_exit = handle_cache_read_command({
@@ -766,6 +774,8 @@ async test "cli: persist run record stores task logs and summaries" {
     max_age_days: 0,
     prune_all: false,
     json_output: false,
+    json_fields: [],
+    limit: 0,
   })
   inspect(cache_prune_exit, content="0")
   let pruned_list_text = format_cache_list_text(
@@ -811,6 +821,7 @@ test "cli: workflow list reads .github/workflows from repo root" {
     action: "list",
     repo_root: Some(main_test_absolute_path(repo_root)),
     json_output: true,
+    json_fields: [],
   })
   inspect(exit_code, content="0")
 }
@@ -958,9 +969,9 @@ fn json_has_field(json_text : String, field : String) -> Bool {
 test "cli: run.json schema has all required top-level fields" {
   let required_fields : Array[String] = [
     "run_id", "workflow_name", "workflow_path", "workspace_root", "workspace_mode",
-    "started_at_ms", "finished_at_ms", "state", "ok", "exit_code", "repository",
-    "ref_name", "before_sha", "after_sha", "changed_paths", "order", "issues", "steps",
-    "tasks", "jobs", "artifacts", "caches",
+    "started_at_ms", "finished_at_ms", "status", "conclusion", "state", "ok", "exit_code",
+    "repository", "ref_name", "before_sha", "after_sha", "changed_paths", "order",
+    "issues", "steps", "tasks", "jobs", "artifacts", "caches",
   ]
   let record : RunRecord = {
     run_id: "run-1",
@@ -989,11 +1000,19 @@ test "cli: run.json schema has all required top-level fields" {
 test "cli: job JSON schema has required fields" {
   let job_json = run_job_json({
     id: "build",
-    status: "success",
+    name: "build",
+    status: "completed",
+    conclusion: "success",
     needs: ["setup"],
     task_ids: ["build/test"],
+    steps: [
+      { name: "test", number: 1, status: "completed", conclusion: "success" },
+    ],
   })
-  for field in (["id", "status", "needs", "task_ids"] : Array[String]) {
+  for
+    field in (
+      ["id", "name", "status", "conclusion", "needs", "task_ids", "steps"] :
+      Array[String]) {
     assert_true(json_has_field(job_json, field))
   }
 }
@@ -1019,6 +1038,855 @@ test "cli: cache JSON schema has required fields" {
   for field in (["key", "sequence", "files"] : Array[String]) {
     assert_true(json_has_field(cache_json, field))
   }
+}
+
+///|
+test "cli: parse run view with --json fields" {
+  let result = parse_run_read_args([
+    "actrun", "run", "view", "run-1", "--json", "status,conclusion,jobs",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run view parse failed")
+  }
+  inspect(options.json_output, content="true")
+  inspect(options.json_fields, content="[\"status\", \"conclusion\", \"jobs\"]")
+}
+
+///|
+test "cli: parse run view with --json (no fields)" {
+  let result = parse_run_read_args(["actrun", "run", "view", "run-1", "--json"])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run view parse failed")
+  }
+  inspect(options.json_output, content="true")
+  inspect(options.json_fields, content="[]")
+}
+
+///|
+test "cli: filter_json_fields returns selected fields only" {
+  let json_text = "{\"status\": \"completed\", \"conclusion\": \"success\", \"jobs\": []}"
+  let filtered = filter_json_fields(json_text, ["status", "conclusion"]).unwrap()
+  inspect(filtered.contains("\"status\""), content="true")
+  inspect(filtered.contains("\"conclusion\""), content="true")
+  inspect(filtered.contains("\"jobs\""), content="false")
+}
+
+///|
+test "cli: filter_json_fields with empty fields returns all" {
+  let json_text = "{\"status\": \"completed\", \"conclusion\": \"success\"}"
+  let filtered = filter_json_fields(json_text, []).unwrap()
+  inspect(filtered.contains("\"status\""), content="true")
+  inspect(filtered.contains("\"conclusion\""), content="true")
+}
+
+///|
+test "cli: parse run list with --limit and --status" {
+  let result = parse_run_read_args([
+    "actrun", "run", "list", "--limit", "5", "--status", "failure", "--json", "status,conclusion",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run list parse failed")
+  }
+  inspect(options.limit, content="5")
+  inspect(options.status_filter, content="failure")
+  inspect(options.json_output, content="true")
+  inspect(options.json_fields, content="[\"status\", \"conclusion\"]")
+}
+
+///|
+test "cli: parse run list with -L and -s shorthand" {
+  let result = parse_run_read_args([
+    "actrun", "run", "list", "-L", "3", "-s", "success",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run list parse failed")
+  }
+  inspect(options.limit, content="3")
+  inspect(options.status_filter, content="success")
+}
+
+///|
+test "cli: parse run view with --exit-status" {
+  let result = parse_run_read_args([
+    "actrun", "run", "view", "run-1", "--exit-status",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run view parse failed")
+  }
+  inspect(options.exit_status, content="true")
+}
+
+///|
+test "cli: run_view_exit_code returns 0 for success" {
+  let json = "{\"conclusion\": \"success\", \"status\": \"completed\"}"
+  inspect(run_view_exit_code(json), content="0")
+}
+
+///|
+test "cli: run_view_exit_code returns 1 for failure" {
+  let json = "{\"conclusion\": \"failure\", \"status\": \"completed\"}"
+  inspect(run_view_exit_code(json), content="1")
+}
+
+///|
+test "cli: run_json_matches_status filters by conclusion" {
+  let json = "{\"status\": \"completed\", \"conclusion\": \"failure\", \"state\": \"completed\"}"
+  inspect(run_json_matches_status(json, "failure"), content="true")
+  inspect(run_json_matches_status(json, "success"), content="false")
+  inspect(run_json_matches_status(json, "completed"), content="true")
+  inspect(run_json_matches_status(json, ""), content="true")
+}
+
+///|
+test "cli: parse run view with --verbose" {
+  let result = parse_run_read_args(["actrun", "run", "view", "run-1", "-v"])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run view parse failed")
+  }
+  inspect(options.verbose, content="true")
+}
+
+///|
+test "cli: parse run logs with --log-failed and --job" {
+  let result = parse_run_read_args([
+    "actrun", "run", "logs", "run-1", "--log-failed", "--job", "build",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run logs parse failed")
+  }
+  inspect(options.log_failed, content="true")
+  inspect(options.job_id, content="build")
+}
+
+///|
+test "cli: parse run logs with -j shorthand" {
+  let result = parse_run_read_args([
+    "actrun", "run", "logs", "run-1", "-j", "test",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run logs parse failed")
+  }
+  inspect(options.job_id, content="test")
+}
+
+///|
+test "cli: format_run_view_text gh-style output" {
+  let json = "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"status\": \"completed\", \"conclusion\": \"success\", \"state\": \"completed\", \"started_at_ms\": 1000, \"finished_at_ms\": 3000, \"jobs\": [{\"id\": \"build\", \"name\": \"build\", \"status\": \"completed\", \"conclusion\": \"success\", \"steps\": [{\"name\": \"Checkout\", \"number\": 1, \"status\": \"completed\", \"conclusion\": \"success\"}]}]}"
+  let text = format_run_view_text(json).unwrap()
+  // Header line
+  inspect(text.contains("X ci (run-1) success in 2s"), content="true")
+  // Job line
+  inspect(text.contains("  X build (success)"), content="true")
+  // Steps should NOT show without verbose
+  inspect(text.contains("Checkout"), content="false")
+}
+
+///|
+test "cli: format_run_view_text verbose shows steps" {
+  let json = "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"status\": \"completed\", \"conclusion\": \"success\", \"state\": \"completed\", \"jobs\": [{\"id\": \"build\", \"name\": \"build\", \"status\": \"completed\", \"conclusion\": \"success\", \"steps\": [{\"name\": \"Checkout\", \"number\": 1, \"status\": \"completed\", \"conclusion\": \"success\"}, {\"name\": \"Test\", \"number\": 2, \"status\": \"completed\", \"conclusion\": \"failure\"}]}]}"
+  let text = format_run_view_text(json, verbose=true).unwrap()
+  inspect(text.contains("    X Checkout (success)"), content="true")
+  inspect(text.contains("    ! Test (failure)"), content="true")
+}
+
+///|
+test "cli: format_run_view_text job_id filters jobs" {
+  let json = "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"status\": \"completed\", \"conclusion\": \"success\", \"state\": \"completed\", \"jobs\": [{\"id\": \"build\", \"name\": \"build\", \"status\": \"completed\", \"conclusion\": \"success\", \"steps\": []}, {\"id\": \"test\", \"name\": \"test\", \"status\": \"completed\", \"conclusion\": \"failure\", \"steps\": []}]}"
+  let text = format_run_view_text(json, job_id="build").unwrap()
+  inspect(text.contains("build"), content="true")
+  inspect(text.contains("test"), content="false")
+}
+
+///|
+test "cli: format_run_view_text failure mark" {
+  let json = "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"status\": \"completed\", \"conclusion\": \"failure\", \"state\": \"completed\", \"jobs\": [{\"id\": \"build\", \"name\": \"build\", \"status\": \"completed\", \"conclusion\": \"failure\", \"steps\": []}]}"
+  let text = format_run_view_text(json).unwrap()
+  inspect(text.contains("! ci (run-1) failure"), content="true")
+  inspect(text.contains("  ! build (failure)"), content="true")
+}
+
+///|
+test "cli: task_matches_job filters by job prefix" {
+  inspect(task_matches_job("build/step_1", "build"), content="true")
+  inspect(task_matches_job("test/step_1", "build"), content="false")
+  inspect(task_matches_job("build/step_1", ""), content="true")
+}
+
+// --- gh-compat integration tests ---
+
+///|
+#cfg(target="native")
+test "gh-compat: run_record_json includes status and conclusion for completed run" {
+  let record : RunRecord = {
+    run_id: "run-1",
+    workflow_name: "ci",
+    workflow_path: ".github/workflows/ci.yml",
+    workspace_root: "/tmp",
+    workspace_mode: "local",
+    started_at_ms: 1000UL,
+    finished_at_ms: 2000UL,
+    state: "completed",
+    ok: true,
+    exit_code: 0,
+    repository: "",
+    ref_name: "",
+    before_sha: "",
+    after_sha: "",
+    changed_paths: [],
+  }
+  let json_text = run_record_json(record)
+  inspect(json_text.contains("\"status\": \"completed\""), content="true")
+  inspect(json_text.contains("\"conclusion\": \"success\""), content="true")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: run_record_json conclusion is failure when ok=false" {
+  let record : RunRecord = {
+    run_id: "run-1",
+    workflow_name: "ci",
+    workflow_path: ".github/workflows/ci.yml",
+    workspace_root: "/tmp",
+    workspace_mode: "local",
+    started_at_ms: 1000UL,
+    finished_at_ms: 2000UL,
+    state: "partial_failed",
+    ok: false,
+    exit_code: 1,
+    repository: "",
+    ref_name: "",
+    before_sha: "",
+    after_sha: "",
+    changed_paths: [],
+  }
+  let json_text = run_record_json(record)
+  inspect(json_text.contains("\"status\": \"completed\""), content="true")
+  inspect(json_text.contains("\"conclusion\": \"failure\""), content="true")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: job record includes name, conclusion, and steps" {
+  let job : RunJobRecord = {
+    id: "build",
+    name: "build",
+    status: "completed",
+    conclusion: "success",
+    needs: [],
+    task_ids: ["build/checkout", "build/test"],
+    steps: [
+      {
+        name: "Checkout",
+        number: 1,
+        status: "completed",
+        conclusion: "success",
+      },
+      { name: "Test", number: 2, status: "completed", conclusion: "failure" },
+    ],
+  }
+  let json_text = run_job_json(job)
+  inspect(json_text.contains("\"name\": \"build\""), content="true")
+  inspect(json_text.contains("\"conclusion\": \"success\""), content="true")
+  inspect(json_text.contains("\"steps\": ["), content="true")
+  inspect(json_text.contains("\"name\": \"Checkout\""), content="true")
+  inspect(json_text.contains("\"number\": 1"), content="true")
+  inspect(json_text.contains("\"name\": \"Test\""), content="true")
+  inspect(json_text.contains("\"number\": 2"), content="true")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: run list with --limit restricts results" {
+  let run_root = "_build/test-main/gh-compat-limit"
+  remove_main_test_tree(run_root)
+  let run_root_abs = main_test_absolute_path(run_root)
+  ensure_main_test_dir(run_root)
+  for i in 1..<=5 {
+    let run_id = "run-" + i.to_string()
+    let run_dir = run_root + "/" + run_id
+    ensure_main_test_dir(run_dir)
+    let json = "{\"run_id\": \"" +
+      run_id +
+      "\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"status\": \"completed\", \"conclusion\": \"success\"}"
+    @xfs.write_string_to_file(run_dir + "/run.json", json)
+  }
+  let all = format_run_list_text(run_root_abs).unwrap_or("")
+  let all_lines : Array[String] = []
+  for line in all.trim_end(chars="\n").to_string().split("\n") {
+    let s = line.to_string()
+    if s.length() > 0 {
+      all_lines.push(s)
+    }
+  }
+  inspect(all_lines.length(), content="5")
+  let limited = format_run_list_text(run_root_abs, limit=2).unwrap_or("")
+  let limited_lines : Array[String] = []
+  for line in limited.trim_end(chars="\n").to_string().split("\n") {
+    let s = line.to_string()
+    if s.length() > 0 {
+      limited_lines.push(s)
+    }
+  }
+  inspect(limited_lines.length(), content="2")
+  // Most recent runs first (reverse order)
+  inspect(limited_lines[0].contains("run-5"), content="true")
+  inspect(limited_lines[1].contains("run-4"), content="true")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: run list with --status filters by conclusion" {
+  let run_root = "_build/test-main/gh-compat-status"
+  remove_main_test_tree(run_root)
+  let run_root_abs = main_test_absolute_path(run_root)
+  ensure_main_test_dir(run_root)
+  ensure_main_test_dir(run_root + "/run-1")
+  @xfs.write_string_to_file(
+    run_root + "/run-1/run.json",
+    "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"status\": \"completed\", \"conclusion\": \"success\"}",
+  )
+  ensure_main_test_dir(run_root + "/run-2")
+  @xfs.write_string_to_file(
+    run_root + "/run-2/run.json",
+    "{\"run_id\": \"run-2\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"status\": \"completed\", \"conclusion\": \"failure\"}",
+  )
+  ensure_main_test_dir(run_root + "/run-3")
+  @xfs.write_string_to_file(
+    run_root + "/run-3/run.json",
+    "{\"run_id\": \"run-3\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"status\": \"completed\", \"conclusion\": \"success\"}",
+  )
+  let failure_text = format_run_list_text(run_root_abs, status_filter="failure").unwrap_or(
+    "",
+  )
+  inspect(failure_text.contains("run-2"), content="true")
+  inspect(failure_text.contains("run-1"), content="false")
+  inspect(failure_text.contains("run-3"), content="false")
+  let success_text = format_run_list_text(run_root_abs, status_filter="success").unwrap_or(
+    "",
+  )
+  inspect(success_text.contains("run-1"), content="true")
+  inspect(success_text.contains("run-3"), content="true")
+  inspect(success_text.contains("run-2"), content="false")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: run list --json with field selection" {
+  let run_root = "_build/test-main/gh-compat-list-fields"
+  remove_main_test_tree(run_root)
+  let run_root_abs = main_test_absolute_path(run_root)
+  ensure_main_test_dir(run_root)
+  ensure_main_test_dir(run_root + "/run-1")
+  @xfs.write_string_to_file(
+    run_root + "/run-1/run.json",
+    "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"status\": \"completed\", \"conclusion\": \"success\", \"ok\": true}",
+  )
+  let json = collect_run_list_json(run_root_abs, json_fields=[
+    "status", "conclusion",
+  ]).unwrap_or("")
+  inspect(json.contains("\"status\""), content="true")
+  inspect(json.contains("\"conclusion\""), content="true")
+  // Fields not requested should be absent
+  inspect(json.contains("\"run_id\""), content="false")
+  inspect(json.contains("\"workflow_name\""), content="false")
+  inspect(json.contains("\"ok\""), content="false")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: run list --status with --limit combined" {
+  let run_root = "_build/test-main/gh-compat-status-limit"
+  remove_main_test_tree(run_root)
+  let run_root_abs = main_test_absolute_path(run_root)
+  ensure_main_test_dir(run_root)
+  for i in 1..<=4 {
+    let run_id = "run-" + i.to_string()
+    ensure_main_test_dir(run_root + "/" + run_id)
+    let conclusion = if i % 2 == 0 { "failure" } else { "success" }
+    @xfs.write_string_to_file(
+      run_root + "/" + run_id + "/run.json",
+      "{\"run_id\": \"" +
+      run_id +
+      "\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"status\": \"completed\", \"conclusion\": \"" +
+      conclusion +
+      "\"}",
+    )
+  }
+  // 4 runs: run-1=success, run-2=failure, run-3=success, run-4=failure
+  // Reverse order: run-4, run-3, run-2, run-1
+  // Filter failure + limit 1 → run-4 only
+  let filtered = format_run_list_text(
+    run_root_abs,
+    status_filter="failure",
+    limit=1,
+  ).unwrap_or("")
+  inspect(filtered.contains("run-4"), content="true")
+  inspect(filtered.contains("run-2"), content="false")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: handle_run_read_command view --exit-status returns 1 for failure" {
+  let run_root = "_build/test-main/gh-compat-exit-status"
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(run_root)
+  ensure_main_test_dir(run_root + "/run-1")
+  @xfs.write_string_to_file(
+    run_root + "/run-1/run.json",
+    "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"status\": \"completed\", \"conclusion\": \"failure\", \"ok\": false, \"exit_code\": 1}",
+  )
+  ensure_main_test_dir(run_root + "/run-2")
+  @xfs.write_string_to_file(
+    run_root + "/run-2/run.json",
+    "{\"run_id\": \"run-2\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"status\": \"completed\", \"conclusion\": \"success\", \"ok\": true, \"exit_code\": 0}",
+  )
+  let exit_fail = handle_run_read_command({
+    action: "view",
+    run_id: "run-1",
+    run_root: Some(run_root),
+    task_id: None,
+    artifact_root: None,
+    download_dir: ".",
+    json_output: false,
+    json_fields: [],
+    limit: 0,
+    status_filter: "",
+    exit_status: true,
+    verbose: false,
+    log_failed: false,
+    job_id: "",
+  })
+  inspect(exit_fail, content="1")
+  let exit_success = handle_run_read_command({
+    action: "view",
+    run_id: "run-2",
+    run_root: Some(run_root),
+    task_id: None,
+    artifact_root: None,
+    download_dir: ".",
+    json_output: false,
+    json_fields: [],
+    limit: 0,
+    status_filter: "",
+    exit_status: true,
+    verbose: false,
+    log_failed: false,
+    job_id: "",
+  })
+  inspect(exit_success, content="0")
+  // Without --exit-status, always 0
+  let exit_no_flag = handle_run_read_command({
+    action: "view",
+    run_id: "run-1",
+    run_root: Some(run_root),
+    task_id: None,
+    artifact_root: None,
+    download_dir: ".",
+    json_output: false,
+    json_fields: [],
+    limit: 0,
+    status_filter: "",
+    exit_status: false,
+    verbose: false,
+    log_failed: false,
+    job_id: "",
+  })
+  inspect(exit_no_flag, content="0")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: handle_run_read_command view --json fields filters output" {
+  let run_root = "_build/test-main/gh-compat-view-fields"
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(run_root)
+  ensure_main_test_dir(run_root + "/run-1")
+  @xfs.write_string_to_file(
+    run_root + "/run-1/run.json",
+    "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"status\": \"completed\", \"conclusion\": \"success\", \"jobs\": []}",
+  )
+  // Call filter_json_fields directly to verify (handle_run_read_command prints to stdout)
+  let run_json = @xfs.read_file_to_string(run_root + "/run-1/run.json")
+  let filtered = filter_json_fields(run_json, ["status", "conclusion"]).unwrap()
+  inspect(filtered.contains("\"status\""), content="true")
+  inspect(filtered.contains("\"conclusion\""), content="true")
+  inspect(filtered.contains("\"run_id\""), content="false")
+  inspect(filtered.contains("\"workflow_name\""), content="false")
+  inspect(filtered.contains("\"jobs\""), content="false")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: format_run_list_text shows conclusion instead of state" {
+  let run_root = "_build/test-main/gh-compat-list-conclusion"
+  remove_main_test_tree(run_root)
+  let run_root_abs = main_test_absolute_path(run_root)
+  ensure_main_test_dir(run_root)
+  ensure_main_test_dir(run_root + "/run-1")
+  @xfs.write_string_to_file(
+    run_root + "/run-1/run.json",
+    "{\"run_id\": \"run-1\", \"workflow_name\": \"ci\", \"state\": \"completed\", \"conclusion\": \"success\"}",
+  )
+  let text = format_run_list_text(run_root_abs).unwrap_or("")
+  // Should display both status and conclusion, plus workflow name and run id
+  inspect(text.contains("success"), content="true")
+  inspect(text.contains("ci"), content="true")
+  inspect(text.contains("run-1"), content="true")
+}
+
+///|
+#cfg(target="native")
+async test "gh-compat: end-to-end workflow produces gh-compatible JSON" {
+  ensure_main_test_dir("_build")
+  ensure_main_test_dir("_build/test-main")
+  let workspace_rel = "_build/test-main/gh-compat-e2e-workspace"
+  let workspace = main_test_absolute_path(workspace_rel)
+  let run_root = "_build/test-main/gh-compat-e2e-runs"
+  remove_main_test_tree(workspace_rel)
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(workspace_rel)
+  let workflow_src =
+    #|name: e2e-test
+    #|'on':
+    #|  push:
+    #|jobs:
+    #|  build:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - id: hello
+    #|        name: Say Hello
+    #|        run: echo hello
+    #|      - id: world
+    #|        name: Say World
+    #|        run: echo world
+  let parsed = @ar.parse_workflow_yaml(workflow_src)
+  let workflow = match parsed.workflow {
+    Some(spec) => spec
+    None => abort(parsed.errors.join("\n"))
+  }
+  let lowered = @ar.lower_push_workflow_in_workspace(workflow, workspace)
+  if lowered.errors.length() > 0 {
+    abort(lowered.errors.join("\n"))
+  }
+  let report = @ar.execute_lowered_native(
+    lowered,
+    workspace_root=workspace,
+    push_event=Some(
+      @ar.new_push_event("main", ["README.md"], repository="owner/repo"),
+    ),
+  )
+  let run_id = persist_run_record(
+    run_root,
+    {
+      run_id: "",
+      workflow_name: "e2e-test",
+      workflow_path: ".github/workflows/e2e.yml",
+      workspace_root: workspace,
+      workspace_mode: "local",
+      started_at_ms: 1000UL,
+      finished_at_ms: 2000UL,
+      state: report.state,
+      ok: report.ok,
+      exit_code: 0,
+      repository: "owner/repo",
+      ref_name: "main",
+      before_sha: "",
+      after_sha: "",
+      changed_paths: [],
+    },
+    report=Some(report),
+    plan=Some(lowered.plan),
+  ).unwrap_or("")
+  inspect(run_id, content="run-1")
+  let run_json = @xfs.read_file_to_string(run_root + "/run-1/run.json")
+  // Top-level gh-compat fields
+  inspect(run_json.contains("\"status\": \"completed\""), content="true")
+  inspect(run_json.contains("\"conclusion\": \"success\""), content="true")
+  // Job has gh-compat fields
+  inspect(run_json.contains("\"name\": \"build\""), content="true")
+  let payload = @json.parse(run_json) catch { _ => abort("parse failed") }
+  let jobs = run_json_array(payload, "jobs")
+  inspect(jobs.length(), content="1")
+  guard jobs[0]
+    is {
+      "id": String(job_id),
+      "name": String(job_name),
+      "status": String(job_status),
+      "conclusion": String(job_conclusion),
+      "steps": Array(steps),
+      ..
+    } else {
+    abort("job structure mismatch")
+  }
+  inspect(job_id, content="build")
+  inspect(job_name, content="build")
+  inspect(job_status, content="completed")
+  inspect(job_conclusion, content="success")
+  // Steps include the named steps
+  assert_true(steps.length() >= 2)
+  let step_names : Array[String] = []
+  for step in steps {
+    if step is { "name": String(name), .. } {
+      step_names.push(name)
+    }
+  }
+  inspect(step_names.contains("Say Hello"), content="true")
+  inspect(step_names.contains("Say World"), content="true")
+  // Verify field filtering works on persisted JSON
+  let filtered = filter_json_fields(run_json, ["status", "conclusion", "jobs"]).unwrap()
+  inspect(filtered.contains("\"status\""), content="true")
+  inspect(filtered.contains("\"conclusion\""), content="true")
+  inspect(filtered.contains("\"jobs\""), content="true")
+  inspect(filtered.contains("\"run_id\""), content="false")
+  inspect(filtered.contains("\"tasks\""), content="false")
+}
+
+///|
+#cfg(target="native")
+async test "gh-compat: --log-failed and --job filter logs" {
+  ensure_main_test_dir("_build")
+  ensure_main_test_dir("_build/test-main")
+  let workspace_rel = "_build/test-main/gh-compat-log-failed-workspace"
+  let workspace = main_test_absolute_path(workspace_rel)
+  let run_root = "_build/test-main/gh-compat-log-failed-runs"
+  remove_main_test_tree(workspace_rel)
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(workspace_rel)
+  let workflow_src =
+    #|name: log-test
+    #|'on':
+    #|  push:
+    #|jobs:
+    #|  build:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - id: passing
+    #|        name: Passing Step
+    #|        run: echo pass
+    #|      - id: failing
+    #|        name: Failing Step
+    #|        run: echo fail-output && exit 1
+    #|        continue-on-error: true
+    #|  test:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - id: check
+    #|        name: Check
+    #|        run: echo check-ok
+  let parsed = @ar.parse_workflow_yaml(workflow_src)
+  let workflow = match parsed.workflow {
+    Some(spec) => spec
+    None => abort(parsed.errors.join("\n"))
+  }
+  let lowered = @ar.lower_push_workflow_in_workspace(workflow, workspace)
+  if lowered.errors.length() > 0 {
+    abort(lowered.errors.join("\n"))
+  }
+  let report = @ar.execute_lowered_native(
+    lowered,
+    workspace_root=workspace,
+    push_event=Some(
+      @ar.new_push_event("main", ["README.md"], repository="owner/repo"),
+    ),
+  )
+  let run_id = persist_run_record(
+    run_root,
+    {
+      run_id: "",
+      workflow_name: "log-test",
+      workflow_path: ".github/workflows/log-test.yml",
+      workspace_root: workspace,
+      workspace_mode: "local",
+      started_at_ms: 1000UL,
+      finished_at_ms: 2000UL,
+      state: report.state,
+      ok: report.ok,
+      exit_code: 0,
+      repository: "",
+      ref_name: "",
+      before_sha: "",
+      after_sha: "",
+      changed_paths: [],
+    },
+    report=Some(report),
+    plan=Some(lowered.plan),
+  ).unwrap_or("")
+  inspect(run_id, content="run-1")
+  let run_dir = run_root + "/run-1"
+  let run_json = @xfs.read_file_to_string(run_dir + "/run.json")
+  // --job build: only build job logs
+  let job_logs = format_run_logs_text(run_dir, run_json, job_filter="build").unwrap_or(
+    "",
+  )
+  inspect(job_logs.contains("build/passing"), content="true")
+  inspect(job_logs.contains("test/check"), content="false")
+  // --job test: only test job logs
+  let test_logs = format_run_logs_text(run_dir, run_json, job_filter="test").unwrap_or(
+    "",
+  )
+  inspect(test_logs.contains("test/check"), content="true")
+  inspect(test_logs.contains("build/passing"), content="false")
+  // --log-failed: only failed tasks
+  let failed_logs = format_run_logs_text(run_dir, run_json, log_failed=true).unwrap_or(
+    "",
+  )
+  inspect(failed_logs.contains("build/failing"), content="true")
+  inspect(failed_logs.contains("build/passing"), content="false")
+  inspect(failed_logs.contains("test/check"), content="false")
+  // --log-failed --job build: failed tasks in build job only
+  let job_failed_logs = format_run_logs_text(
+    run_dir,
+    run_json,
+    log_failed=true,
+    job_filter="build",
+  ).unwrap_or("")
+  inspect(job_failed_logs.contains("build/failing"), content="true")
+  inspect(job_failed_logs.contains("build/passing"), content="false")
+}
+
+///|
+test "cli: parse run rerun gives helpful error" {
+  let result = parse_run_read_args(["actrun", "run", "rerun", "run-1"])
+  assert_true(result.errors.length() > 0)
+  inspect(result.errors[0].contains("--retry"), content="true")
+}
+
+///|
+test "cli: parse run delete" {
+  let result = parse_run_read_args([
+    "actrun", "run", "delete", "run-1", "--run-root", "/tmp/runs",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("run delete parse failed")
+  }
+  inspect(options.action, content="delete")
+  inspect(options.run_id, content="run-1")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: run delete removes run directory" {
+  let run_root = "_build/test-main/gh-compat-run-delete"
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(run_root)
+  ensure_main_test_dir(run_root + "/run-1")
+  @xfs.write_string_to_file(
+    run_root + "/run-1/run.json",
+    "{\"run_id\": \"run-1\"}",
+  )
+  inspect(@xfs.path_exists(run_root + "/run-1"), content="true")
+  let exit_code = handle_run_read_command({
+    action: "delete",
+    run_id: "run-1",
+    run_root: Some(run_root),
+    task_id: None,
+    artifact_root: None,
+    download_dir: ".",
+    json_output: false,
+    json_fields: [],
+    limit: 0,
+    status_filter: "",
+    exit_status: false,
+    verbose: false,
+    log_failed: false,
+    job_id: "",
+  })
+  inspect(exit_code, content="0")
+  inspect(@xfs.path_exists(run_root + "/run-1"), content="false")
+}
+
+///|
+#cfg(target="native")
+test "gh-compat: run delete returns 1 for missing run" {
+  let run_root = "_build/test-main/gh-compat-run-delete-missing"
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(run_root)
+  let exit_code = handle_run_read_command({
+    action: "delete",
+    run_id: "run-99",
+    run_root: Some(run_root),
+    task_id: None,
+    artifact_root: None,
+    download_dir: ".",
+    json_output: false,
+    json_fields: [],
+    limit: 0,
+    status_filter: "",
+    exit_status: false,
+    verbose: false,
+    log_failed: false,
+    job_id: "",
+  })
+  inspect(exit_code, content="1")
+}
+
+///|
+test "cli: filter_json_array_fields filters each item" {
+  let json = "[{\"name\": \"a\", \"key\": \"1\"}, {\"name\": \"b\", \"key\": \"2\"}]"
+  let filtered = filter_json_array_fields(json, ["name"]).unwrap()
+  inspect(filtered.contains("\"name\""), content="true")
+  inspect(filtered.contains("\"key\""), content="false")
+}
+
+///|
+test "cli: filter_json_array_fields with empty fields returns all" {
+  let json = "[{\"name\": \"a\", \"key\": \"1\"}]"
+  let filtered = filter_json_array_fields(json, []).unwrap()
+  inspect(filtered.contains("\"name\""), content="true")
+  inspect(filtered.contains("\"key\""), content="true")
+}
+
+///|
+test "cli: format_elapsed computes duration" {
+  let text = format_elapsed("1000", "3000")
+  inspect(text, content="2s")
+  let text2 = format_elapsed("1000", "121000")
+  inspect(text2, content="2m0s")
+}
+
+///|
+test "cli: parse cache list with --limit and --json fields" {
+  let result = parse_cache_read_args([
+    "actrun", "cache", "list", "--limit", "5", "--json", "key,files",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("cache list parse failed")
+  }
+  inspect(options.limit, content="5")
+  inspect(options.json_fields, content="[\"key\", \"files\"]")
+}
+
+///|
+test "cli: parse workflow list with --json fields" {
+  let result = parse_workflow_read_args([
+    "actrun", "workflow", "list", "--json", "name",
+  ])
+  inspect(result.errors, content="[]")
+  let options = match result.options {
+    Some(value) => value
+    None => abort("workflow list parse failed")
+  }
+  inspect(options.json_fields, content="[\"name\"]")
 }
 
 // --- dotenv parser tests ---
