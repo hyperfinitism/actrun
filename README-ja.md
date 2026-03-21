@@ -19,6 +19,32 @@ git clone https://github.com/mizchi/actrun.git && cd actrun
 moon build src/cmd/actrun --target native
 ```
 
+## flake.nixにoverlayを追加
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    actrun.url = "github:mizchi/actrun";
+  };
+
+  outputs = { nixpkgs, actrun, ... }:
+    let
+      system = "aarch64-darwin"; # or "x86_64-linux"
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ actrun.overlays.default ];
+      };
+    in
+    {
+      packages.${system}.default = pkgs.actrun;
+      devShells.${system}.default = pkgs.mkShell {
+        packages = [ pkgs.actrun ];
+      };
+    };
+}
+```
+
 ## クイックスタート
 
 ```bash
