@@ -2,7 +2,7 @@ name: Update actrun version
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 0 * * 1" # weekly on Monday
   workflow_dispatch:
 
 concurrency:
@@ -16,7 +16,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Get current version from flake.nix
         id: current
@@ -68,7 +68,7 @@ jobs:
         env:
           CURRENT_VERSION: ${{ steps.current.outputs.version }}
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
           title: "Update actrun to v${{ steps.latest.outputs.version }}"
           body: "Automated update of actrun from v${{ env.CURRENT_VERSION }} to v${{ env.LATEST_VERSION }}"

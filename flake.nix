@@ -8,6 +8,7 @@
     let
       version = "0.21.3";
 
+      # aarch64-linux is not supported yet (no release binary available)
       sources = {
         x86_64-linux = {
           url = "https://github.com/mizchi/actrun/releases/download/v${version}/actrun-linux-x64.tar.gz";
