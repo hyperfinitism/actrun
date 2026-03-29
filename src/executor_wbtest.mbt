@@ -46,6 +46,50 @@ test "nix_wrap_command: Packages wraps with nix-shell -p" {
 }
 
 ///|
+test "sandbox_wrap_command: SandboxNone passes through" {
+  let (cmd, args) = sandbox_wrap_command(SandboxNone, "bash", [
+    "--norc", "script.sh",
+  ])
+  inspect(cmd, content="bash")
+  inspect(
+    args,
+    content=(
+      #|["--norc", "script.sh"]
+    ),
+  )
+}
+
+///|
+test "sandbox_wrap_command: Ronly wraps with ronly --" {
+  let (cmd, args) = sandbox_wrap_command(Ronly([]), "bash", [
+    "--norc", "script.sh",
+  ])
+  inspect(cmd, content="ronly")
+  inspect(
+    args,
+    content=(
+      #|["--", "bash", "--norc", "script.sh"]
+    ),
+  )
+}
+
+///|
+test "sandbox_wrap_command: Ronly with writable paths" {
+  let (cmd, args) = sandbox_wrap_command(
+    Ronly(["--writable", "/workspace", "--writable", "/tmp/output"]),
+    "env",
+    ["FOO=bar", "bash", "script.sh"],
+  )
+  inspect(cmd, content="ronly")
+  inspect(
+    args,
+    content=(
+      #|["--writable", "/workspace", "--writable", "/tmp/output", "--", "env", "FOO=bar", "bash", "script.sh"]
+    ),
+  )
+}
+
+///|
 test "is_commit_sha: full 40-char SHA is recognized" {
   assert_eq(is_commit_sha("abc1234def5678abc1234def5678abc1234def56"), true)
 }
