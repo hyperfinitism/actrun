@@ -28,10 +28,11 @@ RUN moon update && \
     cp _build/native/release/build/cmd/actrun/actrun.exe /usr/local/bin/actrun
 
 # --- Runtime stage: minimal WASM-only environment ---
-FROM ubuntu:24.04 AS runtime
+# Force amd64: actrun native binary is amd64-only (MoonBit compiler limitation).
+# On arm64 hosts, Docker runs this via Rosetta/QEMU emulation.
+FROM --platform=linux/amd64 ubuntu:24.04 AS runtime
 
 ARG WASMTIME_VERSION=29.0.1
-ARG TARGETARCH
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -40,12 +41,12 @@ RUN apt-get update && \
       git \
       ca-certificates \
       curl \
+      xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install wasmtime
-RUN ARCH=$(case "$TARGETARCH" in amd64) echo x86_64;; arm64) echo aarch64;; *) echo "$TARGETARCH";; esac) && \
-    curl -fsSL "https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-${ARCH}-linux.tar.xz" \
-      | tar -xJ --strip-components=1 -C /usr/local/bin "wasmtime-v${WASMTIME_VERSION}-${ARCH}-linux/wasmtime"
+# Install wasmtime (x86_64)
+RUN curl -fsSL "https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+      | tar -xJ --strip-components=1 -C /usr/local/bin "wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime"
 
 COPY --from=builder /usr/local/bin/actrun /usr/local/bin/actrun
 
