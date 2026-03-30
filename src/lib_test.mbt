@@ -460,6 +460,90 @@ test "parser: reject non-positive matrix max parallel" {
 }
 
 ///|
+test "wasi job: wasm-only steps are accepted" {
+  let src =
+    #|name: ci
+    #|on: push
+    #|jobs:
+    #|  build:
+    #|    runs-on: wasi
+    #|    steps:
+    #|      - uses: wasm://lint@v1
+    #|      - uses: wasm://test@v1
+  let parsed = parse_workflow_yaml(src)
+  let workflow = expect_workflow(parsed)
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+}
+
+///|
+test "wasi job: run step is rejected" {
+  let src =
+    #|name: ci
+    #|on: push
+    #|jobs:
+    #|  build:
+    #|    runs-on: wasi
+    #|    steps:
+    #|      - uses: wasm://lint@v1
+    #|      - run: echo "not allowed"
+  let parsed = parse_workflow_yaml(src)
+  let workflow = expect_workflow(parsed)
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors.length() > 0, content="true")
+  inspect(lowered.errors[0].contains("run:"), content="true")
+}
+
+///|
+test "wasi job: github action is rejected" {
+  let src =
+    #|name: ci
+    #|on: push
+    #|jobs:
+    #|  build:
+    #|    runs-on: wasi
+    #|    steps:
+    #|      - uses: actions/checkout@v4
+  let parsed = parse_workflow_yaml(src)
+  let workflow = expect_workflow(parsed)
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors.length() > 0, content="true")
+  inspect(lowered.errors[0].contains("wasm://"), content="true")
+}
+
+///|
+test "wasi job: docker action is rejected" {
+  let src =
+    #|name: ci
+    #|on: push
+    #|jobs:
+    #|  build:
+    #|    runs-on: wasi
+    #|    steps:
+    #|      - uses: docker://alpine
+  let parsed = parse_workflow_yaml(src)
+  let workflow = expect_workflow(parsed)
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors.length() > 0, content="true")
+}
+
+///|
+test "non-wasi job: run step is allowed" {
+  let src =
+    #|name: ci
+    #|on: push
+    #|jobs:
+    #|  build:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - run: echo hello
+  let parsed = parse_workflow_yaml(src)
+  let workflow = expect_workflow(parsed)
+  let lowered = lower_push_workflow(workflow)
+  inspect(lowered.errors, content="[]")
+}
+
+///|
 test "push trigger: branch and path filters" {
   let trigger = new_push_trigger(branches=["main"], paths=["src/*", "README.md"])
   let matched = new_push_event("main", ["src/lib.mbt"])

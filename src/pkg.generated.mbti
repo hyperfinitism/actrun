@@ -4,6 +4,7 @@ package "mizchi/actrun"
 import {
   "mizchi/bit/types",
   "mizchi/bitflow/workflow",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -18,6 +19,8 @@ pub fn compute_bit_changed_paths(&@types.RepoFileSystem, String, PushEvent) -> B
 pub fn compute_bit_changed_paths_native(String, PushEvent) -> BitChangedPathsResult
 
 pub async fn dump_workflow_context_json(String, ExecutionPlan, String, PushEvent, dispatch_inputs? : Map[String, String], event_name? : String) -> String
+
+pub fn empty_step_result() -> StoreStepResult
 
 pub async fn execute_lowered_native(LoweringResult, workspace_root? : String, push_event? : PushEvent?, event_name? : String, dispatch_inputs? : Map[String, String], nix_mode? : String, nix_packages? : Array[String], sandbox_mode? : String, sandbox_writable? : Array[String], allow_destructive_checkout_clean? : Bool) -> WorkflowRunReport
 
@@ -95,7 +98,13 @@ pub fn parse_local_action_yaml(String) -> LocalActionParseResult
 
 pub fn parse_workflow_yaml(String) -> WorkflowParseResult
 
+pub fn plan_result_to_json(PlanResult) -> String
+
+pub fn plan_workflow(String, workspace_root? : String) -> PlanResult
+
 pub async fn prefetch_workflow_github_actions_native(WorkflowSpec, String, git_bin? : String?, github_base_url? : String?) -> GitHubActionPrefetchResult
+
+pub fn registry_module_path(String, String) -> String
 
 pub fn resolve_action_ref(ActionRef) -> ActionResolutionResult
 
@@ -106,6 +115,18 @@ pub fn select_workflow_job(WorkflowSpec, String) -> WorkflowSpec
 pub fn select_workflow_step(WorkflowSpec, String, String) -> WorkflowSpec
 
 pub fn step_matches_skip_pattern(StepSpec, Array[String]) -> Bool
+
+pub fn store_env_path(String) -> String
+
+pub fn store_mode_from_env(Map[String, String]) -> StoreMode
+
+pub fn store_outputs_path(String, String) -> String
+
+pub fn store_path_path(String) -> String
+
+pub fn store_step_result_path(String, String) -> String
+
+pub fn store_summary_path(String, String) -> String
 
 pub fn strip_unsupported_workflow_fields(WorkflowSpec) -> WorkflowSpec
 
@@ -247,6 +268,32 @@ pub struct PermissionsSpec {
   values : Map[String, String]
 }
 
+pub struct PlanJob {
+  id : String
+  needs : Array[String]
+  runs_on : Array[String]
+  steps : Array[PlanStep]
+}
+
+pub struct PlanResult {
+  workflow_name : String
+  errors : Array[String]
+  jobs : Array[PlanJob]
+}
+
+pub struct PlanStep {
+  id : String
+  kind : String
+  name : String
+  shell : String
+  script : String
+  uses : String
+  backend : String
+  if_condition : String
+  env : Map[String, String]
+  with_values : Map[String, String]
+}
+
 pub struct PushEvent {
   ref_name : String
   before_sha : String
@@ -300,6 +347,51 @@ pub struct StepSpec {
   continue_on_error : String
   timeout_minutes : Int
 }
+
+pub struct StoreEnvEntry {
+  key : String
+  value : String
+}
+pub impl Show for StoreEnvEntry
+pub impl ToJson for StoreEnvEntry
+pub impl @json.FromJson for StoreEnvEntry
+
+pub enum StoreMode {
+  FileStore
+  HttpStore(String)
+}
+
+pub struct StoreOutputEntry {
+  key : String
+  value : String
+}
+pub impl Show for StoreOutputEntry
+pub impl ToJson for StoreOutputEntry
+pub impl @json.FromJson for StoreOutputEntry
+
+pub struct StorePathEntry {
+  path : String
+}
+pub impl Show for StorePathEntry
+pub impl ToJson for StorePathEntry
+pub impl @json.FromJson for StorePathEntry
+
+pub struct StoreStepResult {
+  outputs : Map[String, String]
+  env_updates : Map[String, String]
+  path_entries : Array[String]
+  summary : String
+}
+pub impl Show for StoreStepResult
+pub impl ToJson for StoreStepResult
+pub impl @json.FromJson for StoreStepResult
+
+pub struct StoreSummaryEntry {
+  content : String
+}
+pub impl Show for StoreSummaryEntry
+pub impl ToJson for StoreSummaryEntry
+pub impl @json.FromJson for StoreSummaryEntry
 
 pub struct TaskPlan {
   id : String

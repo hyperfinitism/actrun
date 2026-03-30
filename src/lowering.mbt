@@ -2775,6 +2775,55 @@ fn resolve_composite_output_expression(
 }
 
 ///|
+fn is_wasi_job(job : JobSpec) -> Bool {
+  for runner in job.runs_on {
+    if runner == "wasi" {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn validate_wasi_job(job : JobSpec, errors : Array[String]) -> Unit {
+  if job.container is Some(_) {
+    errors.push(
+      "job '\{job.id}' uses runs-on: wasi but has container: which is not supported in wasi mode",
+    )
+  }
+  if job.services.length() > 0 {
+    errors.push(
+      "job '\{job.id}' uses runs-on: wasi but has services: which is not supported in wasi mode",
+    )
+  }
+  let mut step_index = 0
+  while step_index < job.steps.length() {
+    let step = job.steps[step_index]
+    let step_id = default_step_id(step, step_index)
+    match step.uses {
+      Some(uses) => {
+        let parsed = parse_action_ref(uses)
+        match parsed.action {
+          Some(Registry("wasm", _, _)) => () // wasm:// actions are allowed
+          Some(_) =>
+            errors.push(
+              "job '\{job.id}' step '\{step_id}' uses '\{uses}' which is not a wasm:// action; only wasm:// actions are allowed in wasi mode",
+            )
+          None => () // parse error handled elsewhere
+        }
+      }
+      None =>
+        if step.run is Some(_) {
+          errors.push(
+            "job '\{job.id}' step '\{step_id}' uses run: which is not supported in wasi mode; use a wasm:// action instead",
+          )
+        }
+    }
+    step_index += 1
+  }
+}
+
+///|
 pub fn lower_push_workflow_in_workspace(
   workflow : WorkflowSpec,
   workspace_root : String,
@@ -2877,6 +2926,9 @@ pub fn lower_push_workflow_in_workspace(
     }
     if job.steps.length() == 0 {
       errors.push("job '\{job.id}' must have at least one step")
+    }
+    if is_wasi_job(job) {
+      validate_wasi_job(job, errors)
     }
 
     let mut previous_task_id = ""
