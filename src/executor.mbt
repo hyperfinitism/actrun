@@ -2896,6 +2896,68 @@ fn resolve_wasm_module_path(
 }
 
 ///|
+fn build_wasmtime_args(
+  env : Map[String, String],
+  workspace_root : String,
+  module_path : String,
+) -> Array[String] {
+  let args : Array[String] = ["run"]
+  // Pass environment variables via --env KEY=VAL
+  // Collect unique directory prefixes from env values for --dir grants
+  let granted_dirs : Map[String, Bool] = {}
+  for key, value in env {
+    args.push("--env")
+    args.push(key + "=" + value)
+  }
+  // Grant filesystem access to workspace
+  let abs_workspace = absolute_exec_path(workspace_root)
+  granted_dirs[abs_workspace] = true
+  // Grant access to directories referenced by file commands (GITHUB_OUTPUT etc.)
+  let file_env_keys = [
+    "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH", "GITHUB_STEP_SUMMARY", "GITHUB_STATE",
+  ]
+  for fkey in file_env_keys {
+    match env.get(fkey) {
+      Some(path) if path.length() > 0 => {
+        // Extract parent directory from file path
+        let dir = parent_dir(path)
+        if dir.length() > 0 {
+          granted_dirs[dir] = true
+        }
+      }
+      _ => ()
+    }
+  }
+  for dir, _ in granted_dirs {
+    args.push("--dir")
+    args.push(dir)
+  }
+  // Grant /tmp access for temp files
+  args.push("--dir")
+  args.push("/tmp")
+  args.push(module_path)
+  args
+}
+
+///|
+fn parent_dir(path : String) -> String {
+  let slash = '/'.to_int().to_uint16()
+  let mut last_slash = -1
+  let mut idx = 0
+  while idx < path.length() {
+    if path.unsafe_get(idx) == slash {
+      last_slash = idx
+    }
+    idx += 1
+  }
+  if last_slash > 0 {
+    exec_text_slice(path, 0, last_slash)
+  } else {
+    ""
+  }
+}
+
+///|
 async fn execute_wasm_action_native(
   workflow_name : String,
   plan : TaskPlan,
@@ -2928,12 +2990,16 @@ async fn execute_wasm_action_native(
     workflow_name, plan, workspace_root, github_ctx, resolved_plan_env, file_commands,
     runner_ctx,
   )
-  let cmd = configured_exec_bin(
+  let wasm_bin = configured_exec_bin(
     "ACTRUN_WASM_BIN", resolved_plan_env, "wasmtime",
   )
   let cwd = action.action_path.unwrap_or(resolve_task_cwd(workspace_root, ""))
-  let env_args = env_command_args(cmd, [module_path], env)
-  let (code, stdout, stderr) = run_command("env", env_args, cwd~)
+  // Build wasmtime args: --env KEY=VAL for each env var, --dir for filesystem
+  let abs_module_path = absolute_exec_path(module_path)
+  let wasm_args = build_wasmtime_args(env, workspace_root, abs_module_path)
+  // Don't use env_command_args — wasmtime receives env via --env flags, not
+  // host environment. Using env would break values containing spaces.
+  let (code, stdout, stderr) = run_command(wasm_bin, wasm_args, cwd~)
   {
     report: {
       id: plan.id,
