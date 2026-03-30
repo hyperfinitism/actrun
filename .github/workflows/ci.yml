@@ -30,9 +30,7 @@ jobs:
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
       - name: Install MoonBit CLI
         if: ${{ !env.ACTRUN_LOCAL }}
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-moonbit
       - name: Moon version
         run: moon version --all
       - name: Moon update
@@ -64,9 +62,7 @@ jobs:
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
       - name: Install MoonBit CLI
         if: ${{ !env.ACTRUN_LOCAL }}
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-moonbit
       - name: Moon version
         run: moon version --all
       - name: Moon update
@@ -102,9 +98,7 @@ jobs:
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
       - name: Install MoonBit CLI
         if: ${{ !env.ACTRUN_LOCAL }}
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-moonbit
       - name: Moon update
         if: ${{ !env.ACTRUN_LOCAL }}
         run: moon update
