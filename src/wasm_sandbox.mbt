@@ -111,6 +111,75 @@ pub fn build_sandboxed_wasmtime_args(
 }
 
 ///|
+/// Resolve the WASM runner command.
+/// - "wasmtime" (default): use wasmtime directly with CLI args
+/// - "deno": use deno with wasi-runner.mjs shim
+/// - "node"/"bun": use node/bun with wasi-runner.mjs shim
+/// - anything else: use as-is (custom runner with wasmtime-compatible CLI)
+#cfg(target="native")
+pub fn resolve_wasm_runner_command(
+  wasm_bin : String,
+  wasm_args : Array[String],
+  workspace_root : String,
+) -> (String, Array[String]) {
+  let bin_name = basename_of(wasm_bin)
+  if bin_name == "deno" || bin_name == "node" || bin_name == "bun" {
+    let shim_path = find_wasi_runner_shim(workspace_root)
+    let args : Array[String] = []
+    if bin_name == "deno" {
+      args.push("run")
+      args.push("--allow-all")
+    }
+    args.push(shim_path)
+    for arg in wasm_args {
+      args.push(arg)
+    }
+    (wasm_bin, args)
+  } else {
+    (wasm_bin, wasm_args)
+  }
+}
+
+///|
+fn basename_of(path : String) -> String {
+  let slash = '/'.to_int().to_uint16()
+  let mut last_slash = -1
+  let mut idx = 0
+  while idx < path.length() {
+    if path.unsafe_get(idx) == slash {
+      last_slash = idx
+    }
+    idx += 1
+  }
+  if last_slash >= 0 {
+    exec_text_slice(path, last_slash + 1, path.length())
+  } else {
+    path
+  }
+}
+
+///|
+fn find_wasi_runner_shim(workspace_root : String) -> String {
+  // Look for wasi-runner.mjs relative to cwd first, then workspace
+  let candidates = [
+    "scripts/wasi-runner.mjs", "node_modules/@mizchi/actrun/scripts/wasi-runner.mjs",
+  ]
+  if workspace_root.length() > 0 {
+    candidates.push(workspace_root + "/scripts/wasi-runner.mjs")
+    candidates.push(
+      workspace_root + "/node_modules/@mizchi/actrun/scripts/wasi-runner.mjs",
+    )
+  }
+  for candidate in candidates {
+    if @xfs.path_exists(candidate) {
+      return absolute_exec_path(candidate)
+    }
+  }
+  // Fallback: return absolute path to cwd-relative location
+  absolute_exec_path("scripts/wasi-runner.mjs")
+}
+
+///|
 /// Read results from the sandbox after WASM execution.
 #cfg(target="native")
 pub fn read_sandbox_results(

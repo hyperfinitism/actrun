@@ -2973,8 +2973,12 @@ async fn execute_wasm_action_native(
   )
   let abs_module_path = absolute_exec_path(module_path)
   let wasm_args = build_sandboxed_wasmtime_args(sandbox, env, abs_module_path)
+  // For deno/node/bun runners, prepend wasi-runner.mjs as the shim script
+  let (cmd, args) = resolve_wasm_runner_command(
+    wasm_bin, wasm_args, workspace_root,
+  )
   let cwd = sandbox.tempdir
-  let (code, stdout, stderr) = run_command(wasm_bin, wasm_args, cwd~)
+  let (code, stdout, stderr) = run_command(cmd, args, cwd~)
   let result = read_sandbox_results(sandbox, code, stdout, stderr)
   cleanup_wasm_sandbox(sandbox)
   {
