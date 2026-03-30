@@ -2920,6 +2920,34 @@ async fn execute_wasm_action_native(
       "wasm module for '\{entrypoint}' was not found",
     )
   }
+  // Validate the WASM module using wite before execution
+  let abs_module_path = absolute_exec_path(module_path)
+  let skip_validate = resolved_plan_env
+    .get("ACTRUN_WASM_SKIP_VALIDATE")
+    .unwrap_or("") ==
+    "true"
+  if not(skip_validate) {
+    let wasm_bytes_opt : Bytes? = try
+      @xfs.read_file_to_bytes(abs_module_path)
+    catch {
+      _ => None
+    } noraise {
+      bytes => Some(bytes)
+    }
+    match wasm_bytes_opt {
+      Some(wasm_bytes) => {
+        let info = inspect_wasm_module(wasm_bytes)
+        if not(info.valid) {
+          return failure_execution_result(
+            plan,
+            workspace_root,
+            "wasm module '\{entrypoint}' is invalid: " + info.error,
+          )
+        }
+      }
+      None => ()
+    }
+  }
   // Create a sandboxed tempdir — WASM module only sees this directory,
   // not the host filesystem. Inspired by moonix FsBridge pattern.
   guard create_wasm_sandbox(plan.id) is Some(sandbox) else {

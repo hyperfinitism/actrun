@@ -14,6 +14,7 @@ import {
   "moonbitlang/x/fs" @xfs,
   "moonbitlang/x/sys" @xsys,
   "moonbit-community/yaml" @yaml,
+  "mizchi/wite" @wite,
 }
 
 import {
@@ -43,5 +44,6 @@ options(
     "runner_context_test.mbt": [ "native" ],
     "runtime_test.mbt": [ "native" ],
     "test_support_github_fetch_test.mbt": [ "native" ],
+    "wasm_module_test.mbt": [ "native" ],
   },
 )

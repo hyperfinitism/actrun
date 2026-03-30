@@ -3883,7 +3883,11 @@ async test "executor: wasm actions run via configured wasm runner" {
           shell=Some("bash"),
         ),
       ],
-      env={ "ACTRUN_WASM_BIN": wasm_bin, "ACTRUN_WASM_ACTION_ROOT": wasm_root },
+      env={
+        "ACTRUN_WASM_BIN": wasm_bin,
+        "ACTRUN_WASM_ACTION_ROOT": wasm_root,
+        "ACTRUN_WASM_SKIP_VALIDATE": "true",
+      },
       defaults=new_run_defaults(shell=Some("bash")),
     ),
   ])

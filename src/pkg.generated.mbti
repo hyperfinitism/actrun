@@ -8,6 +8,8 @@ import {
 }
 
 // Values
+pub fn analyze_wasm_dead_code(Bytes) -> WasmDceReport
+
 pub fn backend_capabilities_for(String) -> BackendCapabilities
 
 pub fn build_sandboxed_wasmtime_args(WasmSandbox, Map[String, String], String) -> Array[String]
@@ -41,6 +43,8 @@ pub fn find_task_plan(ExecutionPlan, String) -> TaskPlan?
 pub fn find_task_run_report(WorkflowRunReport, String) -> TaskRunReport?
 
 pub fn find_workflow_step_report(WorkflowRunReport, String) -> WorkflowStepReport?
+
+pub fn inspect_wasm_module(Bytes) -> WasmModuleInfo
 
 pub fn lower_push_workflow(WorkflowSpec) -> LoweringResult
 
@@ -93,6 +97,8 @@ pub fn new_workflow_call_output_spec(description? : String, value? : String) -> 
 pub fn new_workflow_call_secret_spec(required? : Bool) -> WorkflowCallSecretSpec
 
 pub fn new_workflow_call_spec(inputs? : Map[String, WorkflowCallInputSpec], outputs? : Map[String, WorkflowCallOutputSpec], secrets? : Map[String, WorkflowCallSecretSpec]) -> WorkflowCallSpec
+
+pub fn optimize_wasm_module(Bytes, level? : String) -> WasmOptimizeResult
 
 pub fn override_workflow_steps(WorkflowSpec, Map[String, String]) -> WorkflowSpec
 
@@ -431,6 +437,30 @@ pub struct TaskRunReport {
   stdout : String
   stderr : String
   summary : String
+}
+
+pub struct WasmDceReport {
+  removable_functions : Int
+  removable_bytes : Int
+  ok : Bool
+  error : String
+}
+
+pub struct WasmModuleInfo {
+  total_bytes : Int
+  function_count : Int
+  import_count : Int
+  export_count : Int
+  valid : Bool
+  error : String
+}
+
+pub struct WasmOptimizeResult {
+  original_size : Int
+  optimized_size : Int
+  optimized_bytes : Bytes
+  ok : Bool
+  error : String
 }
 
 pub struct WasmSandbox {
