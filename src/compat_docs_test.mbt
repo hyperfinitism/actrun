@@ -1154,13 +1154,13 @@ test "compat docs: lower matrix job if fixture" {
   inspect(
     lowered.plan.job_if_conditions.get("build__matrix_1").unwrap_or(""),
     content=(
-      #|${{ false != 'true' }}
+      #|${{ 'false' != 'true' }}
     ),
   )
   inspect(
     lowered.plan.job_if_conditions.get("build__matrix_2").unwrap_or(""),
     content=(
-      #|${{ true != 'true' }}
+      #|${{ 'true' != 'true' }}
     ),
   )
 }
@@ -1242,13 +1242,13 @@ test "compat docs: lower matrix step if fixture" {
   inspect(
     first_deploy.if_condition,
     content=(
-      #|${{ true == 'true' }}
+      #|${{ 'true' == 'true' }}
     ),
   )
   inspect(
     second_deploy.if_condition,
     content=(
-      #|${{ false == 'true' }}
+      #|${{ 'false' == 'true' }}
     ),
   )
 }

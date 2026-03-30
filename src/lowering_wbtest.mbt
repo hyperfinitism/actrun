@@ -83,14 +83,24 @@ test "substitute_matrix_text: complex expression preserves ${{ }}" {
   let result = substitute_matrix_text(
     "echo ${{ matrix.os == 'ubuntu' }}", values,
   )
-  inspect(result, content="echo ${{ ubuntu == 'ubuntu' }}")
+  inspect(
+    result,
+    content=(
+      #|echo ${{ 'ubuntu' == 'ubuntu' }}
+    ),
+  )
 }
 
 ///|
 test "substitute_matrix_text: multiple matrix refs in one expression" {
   let values : Map[String, String] = { "a": "x", "b": "y" }
   let result = substitute_matrix_text("${{ matrix.a == matrix.b }}", values)
-  inspect(result, content="${{ x == y }}")
+  inspect(
+    result,
+    content=(
+      #|${{ 'x' == 'y' }}
+    ),
+  )
 }
 
 ///|
@@ -189,4 +199,74 @@ test "matrix_expr_name: rejects expression with spaces in key" {
 ///|
 test "matrix_expr_name: non-matrix prefix" {
   inspect(matrix_expr_name(" github.ref "), content="None")
+}
+
+///|
+test "substitute_matrix_refs_in_expr: injection attempt is quoted" {
+  let values : Map[String, String] = { "name": "'true' || always()" }
+  let result = substitute_matrix_refs_in_expr(" matrix.name == 'safe' ", values)
+  // The injected value is wrapped in quotes, preventing expression injection
+  inspect(result, content=" '''true'' || always()' == 'safe' ")
+}
+
+///|
+test "substitute_matrix_refs_in_expr: value with single quotes is escaped" {
+  let values : Map[String, String] = { "msg": "it's" }
+  let result = substitute_matrix_refs_in_expr(" matrix.msg ", values)
+  inspect(result, content=" 'it''s' ")
+}
+
+///|
+test "quote_expr_string_literal: simple value" {
+  inspect(quote_expr_string_literal("hello"), content="'hello'")
+}
+
+///|
+test "quote_expr_string_literal: empty string" {
+  inspect(quote_expr_string_literal(""), content="''")
+}
+
+///|
+test "quote_expr_string_literal: contains single quote" {
+  inspect(quote_expr_string_literal("it's"), content="'it''s'")
+}
+
+///|
+test "quote_expr_string_literal: contains double quote" {
+  inspect(quote_expr_string_literal("say \"hi\""), content="'say \"hi\"'")
+}
+
+///|
+test "is_path_traversal: safe relative path" {
+  inspect(is_path_traversal("./.github/actions/emit"), content="false")
+}
+
+///|
+test "is_path_traversal: safe nested path" {
+  inspect(is_path_traversal(".github/actions/emit"), content="false")
+}
+
+///|
+test "is_path_traversal: parent escape" {
+  inspect(is_path_traversal("../../outside"), content="true")
+}
+
+///|
+test "is_path_traversal: hidden parent escape" {
+  inspect(is_path_traversal("./foo/../../.."), content="true")
+}
+
+///|
+test "is_path_traversal: absolute path" {
+  inspect(is_path_traversal("/etc/passwd"), content="true")
+}
+
+///|
+test "is_path_traversal: dot-dot at end" {
+  inspect(is_path_traversal("actions/.."), content="false")
+}
+
+///|
+test "is_path_traversal: single dot" {
+  inspect(is_path_traversal("."), content="false")
 }

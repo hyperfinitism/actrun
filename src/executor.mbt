@@ -491,6 +491,15 @@ fn ensure_exec_dir(path : String) -> Bool {
 }
 
 ///|
+fn remove_file(path : String) -> Unit {
+  try @xfs.remove_file(path) catch {
+    _ => ()
+  } noraise {
+    _ => ()
+  }
+}
+
+///|
 fn write_exec_text(path : String, text : String) -> Bool {
   try @xfs.write_string_to_file(path, text) catch {
     _ => false
@@ -3932,7 +3941,7 @@ async fn execute_task_plan_native(
   )
   let env_args = env_command_args(cmd, args, env)
   let (code, stdout, stderr) = run_command("env", env_args, cwd~)
-  {
+  let result = {
     report: {
       id: plan.id,
       kind: plan.kind,
@@ -3954,6 +3963,9 @@ async fn execute_task_plan_native(
     output_values: parse_output_values(file_commands.output_path),
     state_updates: parse_state_values(file_commands.state_path),
   }
+  // Clean up script file after execution to avoid leaving secrets on disk
+  remove_file(file_commands.script_path)
+  result
 }
 
 ///|

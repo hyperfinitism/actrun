@@ -446,7 +446,11 @@ fn substitute_matrix_refs_in_expr(
         }
         if key_end > key_start {
           let key = text_slice(expression, key_start, key_end)
-          chunks.push(matrix_values.get(key).unwrap_or(""))
+          let value = matrix_values.get(key).unwrap_or("")
+          // Quote the value as a string literal to prevent expression injection.
+          // e.g., matrix value "'true' || always()" becomes the safe literal
+          // "'\'true\' || always()'" instead of raw injection into the expression.
+          chunks.push(quote_expr_string_literal(value))
           idx = key_end
         } else {
           chunks.push(prefix)
@@ -460,6 +464,22 @@ fn substitute_matrix_refs_in_expr(
     }
   }
   chunks.join("")
+}
+
+///|
+fn quote_expr_string_literal(value : String) -> String {
+  let sq = '\''
+  let buf = StringBuilder::new()
+  buf.write_char(sq)
+  for ch in value {
+    if ch == sq {
+      buf.write_string("''")
+    } else {
+      buf.write_char(ch)
+    }
+  }
+  buf.write_char(sq)
+  buf.to_string()
 }
 
 ///|
@@ -2407,6 +2427,12 @@ fn lower_manifest_backed_action(
 }
 
 ///|
+fn is_path_traversal(path : String) -> Bool {
+  let normalized = normalize_local_action_path(path)
+  normalized.has_prefix("..") || normalized.has_prefix("/")
+}
+
+///|
 fn find_local_action_manifest(
   workspace_root : String,
   action_path : String,
@@ -2892,6 +2918,16 @@ pub fn lower_push_workflow_in_workspace(
         }
         match action_ref {
           LocalPath(path) => {
+            // Only check user-authored local action refs (./path).
+            // Paths from reusable workflow expansion may legitimately
+            // contain ".." to reach cached repos.
+            if path.has_prefix("./") && is_path_traversal(path) {
+              errors.push(
+                "step '\{job.id}/\{resolved_step_id}' local action path '\{path}' escapes workspace",
+              )
+              step_index += 1
+              continue
+            }
             previous_task_id = lower_local_action(
               workflow,
               job,
