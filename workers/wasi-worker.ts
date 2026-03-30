@@ -1,125 +1,179 @@
 // WASI Runner Worker for Deno Deploy
-// Executes WASM+WASI modules in a serverless environment.
+// Executes WASM+WASI modules serverlessly with in-memory virtual FS.
 //
-// Endpoints:
-//   POST /run    - Execute a WASM module with WASI P1 support
-//   POST /plan   - Parse workflow YAML and return execution plan
-//   GET  /health - Health check
+// POST /run    - Execute a WASM module
+// GET  /health - Health check
 //
-// Usage:
-//   deno run --allow-all workers/wasi-worker.ts         # local
-//   deployctl deploy --project=actrun workers/wasi-worker.ts  # deploy
+// Local:  deno run --allow-all workers/wasi-worker.ts
+// Deploy: deployctl deploy --project=actrun-wasi workers/wasi-worker.ts
 
-// --- Minimal WASI P1 Implementation (inline, no file dependency) ---
+// --- In-Memory Virtual Filesystem ---
+
+class VirtualFs {
+  private files = new Map<string, string>();
+
+  write(path: string, content: string, append: boolean) {
+    if (append) {
+      this.files.set(path, (this.files.get(path) ?? "") + content);
+    } else {
+      this.files.set(path, content);
+    }
+  }
+
+  read(path: string): string | undefined {
+    return this.files.get(path);
+  }
+
+  /** Parse key=value entries (GITHUB_OUTPUT / GITHUB_ENV format) */
+  parseKeyValues(path: string): Record<string, string> {
+    const content = this.files.get(path) ?? "";
+    const result: Record<string, string> = {};
+    for (const line of content.split("\n")) {
+      if (!line) continue;
+      const eq = line.indexOf("=");
+      if (eq > 0) {
+        result[line.substring(0, eq)] = line.substring(eq + 1);
+      }
+    }
+    return result;
+  }
+}
+
+// --- Minimal WASI P1 ---
 
 class WasiP1Runner {
   private memory!: WebAssembly.Memory;
-  private fds = new Map<number, { path?: string; data: Uint8Array; offset: number }>();
+  private fds = new Map<
+    number,
+    { path?: string; isDir: boolean; writeBuf: string[] }
+  >();
   private nextFd = 3;
   private env: Record<string, string>;
   private stdoutBuf: Uint8Array[] = [];
   private stderrBuf: Uint8Array[] = [];
-  private outputEntries: Record<string, string> = {};
   private exitCode = 0;
+  private vfs: VirtualFs;
+  private preopenDirs: string[];
 
-  constructor(env: Record<string, string>) {
+  constructor(env: Record<string, string>, vfs: VirtualFs, preopenDirs: string[]) {
     this.env = env;
-    // fd 0=stdin, 1=stdout, 2=stderr
-    this.fds.set(0, { data: new Uint8Array(), offset: 0 });
-    this.fds.set(1, { data: new Uint8Array(), offset: 0 });
-    this.fds.set(2, { data: new Uint8Array(), offset: 0 });
+    this.vfs = vfs;
+    this.preopenDirs = preopenDirs;
+    this.fds.set(0, { isDir: false, writeBuf: [] });
+    this.fds.set(1, { isDir: false, writeBuf: [] });
+    this.fds.set(2, { isDir: false, writeBuf: [] });
+    for (const dir of preopenDirs) {
+      this.fds.set(this.nextFd++, { path: dir, isDir: true, writeBuf: [] });
+    }
   }
 
-  setMemory(mem: WebAssembly.Memory) { this.memory = mem; }
-
-  getStdout(): string { return new TextDecoder().decode(concatBuffers(this.stdoutBuf)); }
-  getStderr(): string { return new TextDecoder().decode(concatBuffers(this.stderrBuf)); }
-  getOutputs(): Record<string, string> { return this.outputEntries; }
+  setMemory(m: WebAssembly.Memory) { this.memory = m; }
+  getStdout(): string { return decode(concat(this.stdoutBuf)); }
+  getStderr(): string { return decode(concat(this.stderrBuf)); }
   getExitCode(): number { return this.exitCode; }
 
-  private view() { return new DataView(this.memory.buffer); }
+  private v() { return new DataView(this.memory.buffer); }
   private u8() { return new Uint8Array(this.memory.buffer); }
-  private encoder = new TextEncoder();
+  private enc = new TextEncoder();
 
   getImports(): WebAssembly.Imports {
+    const self = this;
     return {
       wasi_snapshot_preview1: {
         args_get: () => 0,
-        args_sizes_get: (argc: number, argv_buf: number) => {
-          this.view().setUint32(argc, 0, true);
-          this.view().setUint32(argv_buf, 0, true);
+        args_sizes_get: (c: number, s: number) => {
+          self.v().setUint32(c, 0, true);
+          self.v().setUint32(s, 0, true);
           return 0;
         },
-        environ_get: (environ: number, buf: number) => {
-          const entries = Object.entries(this.env);
-          let offset = buf;
+        environ_get: (ep: number, bp: number) => {
+          const entries = Object.entries(self.env);
+          let off = bp;
           for (let i = 0; i < entries.length; i++) {
-            this.view().setUint32(environ + i * 4, offset, true);
-            const s = this.encoder.encode(`${entries[i][0]}=${entries[i][1]}\0`);
-            this.u8().set(s, offset);
-            offset += s.length;
+            self.v().setUint32(ep + i * 4, off, true);
+            const s = self.enc.encode(`${entries[i][0]}=${entries[i][1]}\0`);
+            self.u8().set(s, off);
+            off += s.length;
           }
           return 0;
         },
-        environ_sizes_get: (count: number, size: number) => {
-          const entries = Object.entries(this.env);
-          let total = 0;
-          for (const [k, v] of entries) total += k.length + 1 + v.length + 1;
-          this.view().setUint32(count, entries.length, true);
-          this.view().setUint32(size, total, true);
+        environ_sizes_get: (cp: number, sp: number) => {
+          const entries = Object.entries(self.env);
+          let sz = 0;
+          for (const [k, v] of entries) sz += k.length + 1 + v.length + 1;
+          self.v().setUint32(cp, entries.length, true);
+          self.v().setUint32(sp, sz, true);
           return 0;
         },
-        fd_write: (fd: number, iovs: number, iovsLen: number, nwritten: number) => {
+        fd_write: (fd: number, iovs: number, iovsLen: number, nw: number) => {
           let written = 0;
           for (let i = 0; i < iovsLen; i++) {
-            const ptr = this.view().getUint32(iovs + i * 8, true);
-            const len = this.view().getUint32(iovs + i * 8 + 4, true);
-            const data = this.u8().slice(ptr, ptr + len);
-            if (fd === 1) this.stdoutBuf.push(data);
-            else if (fd === 2) this.stderrBuf.push(data);
+            const ptr = self.v().getUint32(iovs + i * 8, true);
+            const len = self.v().getUint32(iovs + i * 8 + 4, true);
+            const data = self.u8().slice(ptr, ptr + len);
+            if (fd === 1) self.stdoutBuf.push(data);
+            else if (fd === 2) self.stderrBuf.push(data);
             else {
-              // File write — parse as GITHUB_OUTPUT-style key=value
-              const text = new TextDecoder().decode(data);
-              for (const line of text.split("\n")) {
-                const eq = line.indexOf("=");
-                if (eq > 0) {
-                  this.outputEntries[line.substring(0, eq)] = line.substring(eq + 1);
-                }
+              const entry = self.fds.get(fd);
+              if (entry?.path) {
+                self.vfs.write(entry.path, decode(data), true);
               }
             }
             written += len;
           }
-          this.view().setUint32(nwritten, written, true);
+          self.v().setUint32(nw, written, true);
           return 0;
         },
         fd_read: () => 0,
         fd_close: () => 0,
         fd_seek: () => 0,
         fd_fdstat_get: (fd: number, buf: number) => {
-          this.view().setUint8(buf, fd <= 2 ? 2 : 4);
-          this.view().setUint16(buf + 2, 0, true);
-          this.view().setBigUint64(buf + 8, 0n, true);
-          this.view().setBigUint64(buf + 16, 0n, true);
+          const e = self.fds.get(fd);
+          self.v().setUint8(buf, fd <= 2 ? 2 : e?.isDir ? 3 : 4);
+          self.v().setUint16(buf + 2, 0, true);
+          self.v().setBigUint64(buf + 8, 0n, true);
+          self.v().setBigUint64(buf + 16, 0n, true);
           return 0;
         },
-        fd_prestat_get: (_fd: number, _buf: number) => 8, // EBADF — no preopens
-        fd_prestat_dir_name: () => 8,
-        path_open: (dirfd: number, _: number, pathPtr: number, pathLen: number,
-                     __: number, ___: bigint, ____: bigint, _____: number, fdPtr: number) => {
-          // Virtual file open: create a new fd for writing outputs
-          const newFd = this.nextFd++;
-          this.fds.set(newFd, { data: new Uint8Array(), offset: 0 });
-          this.view().setUint32(fdPtr, newFd, true);
+        fd_prestat_get: (fd: number, buf: number) => {
+          const e = self.fds.get(fd);
+          if (!e?.isDir || !e.path) return 8;
+          self.v().setUint8(buf, 0);
+          self.v().setUint32(buf + 4, self.enc.encode(e.path).length, true);
           return 0;
         },
-        clock_time_get: (_: number, __: bigint, ptr: number) => {
-          this.view().setBigUint64(ptr, BigInt(Date.now()) * 1000000n, true);
+        fd_prestat_dir_name: (fd: number, p: number, l: number) => {
+          const e = self.fds.get(fd);
+          if (!e?.path) return 8;
+          self.u8().set(self.enc.encode(e.path).slice(0, l), p);
           return 0;
         },
-        proc_exit: (code: number) => { this.exitCode = code; throw new WasiExit(code); },
+        path_open: (
+          dirfd: number, _: number, pp: number, pl: number,
+          __: number, ___: bigint, ____: bigint, _____: number, fdp: number,
+        ) => {
+          const dir = self.fds.get(dirfd);
+          if (!dir?.path) return 8;
+          const rel = decode(self.u8().slice(pp, pp + pl));
+          const full = dir.path + "/" + rel;
+          const nfd = self.nextFd++;
+          self.fds.set(nfd, { path: full, isDir: false, writeBuf: [] });
+          // Initialize empty file in vfs
+          if (!self.vfs.read(full)) self.vfs.write(full, "", false);
+          self.v().setUint32(fdp, nfd, true);
+          return 0;
+        },
+        clock_time_get: (_: number, __: bigint, p: number) => {
+          self.v().setBigUint64(p, BigInt(Date.now()) * 1000000n, true);
+          return 0;
+        },
+        proc_exit: (code: number) => {
+          self.exitCode = code;
+          throw new WasiExit(code);
+        },
         sched_yield: () => 0,
         random_get: (buf: number, len: number) => {
-          crypto.getRandomValues(this.u8().subarray(buf, buf + len));
+          crypto.getRandomValues(self.u8().subarray(buf, buf + len));
           return 0;
         },
         poll_oneoff: () => 0,
@@ -139,15 +193,16 @@ class WasiExit extends Error {
   constructor(public code: number) { super(`exit(${code})`); }
 }
 
-function concatBuffers(bufs: Uint8Array[]): Uint8Array {
+function concat(bufs: Uint8Array[]): Uint8Array {
   const total = bufs.reduce((s, b) => s + b.length, 0);
-  const result = new Uint8Array(total);
-  let offset = 0;
-  for (const buf of bufs) { result.set(buf, offset); offset += buf.length; }
-  return result;
+  const r = new Uint8Array(total);
+  let o = 0;
+  for (const b of bufs) { r.set(b, o); o += b.length; }
+  return r;
 }
+const decode = (b: Uint8Array) => new TextDecoder().decode(b);
 
-// --- HTTP Handler ---
+// --- HTTP Server ---
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
@@ -159,41 +214,48 @@ Deno.serve(async (req: Request) => {
   if (url.pathname === "/run" && req.method === "POST") {
     try {
       const body = await req.json();
-      const { module_url, module_bytes_base64, env = {}, inputs = {} } = body;
+      const { module_url, env = {}, inputs = {} } = body;
 
-      // Build WASI env
+      // Build env
       const wasiEnv: Record<string, string> = { ...env };
       for (const [k, v] of Object.entries(inputs)) {
-        wasiEnv[`INPUT_${k.toUpperCase()}`] = v as string;
+        wasiEnv[`INPUT_${(k as string).toUpperCase()}`] = v as string;
       }
 
-      // Get module bytes
-      let bytes: Uint8Array;
-      if (module_bytes_base64) {
-        bytes = Uint8Array.from(atob(module_bytes_base64), c => c.charCodeAt(0));
-      } else if (module_url) {
-        const resp = await fetch(module_url);
-        if (!resp.ok) return Response.json({ error: `fetch failed: ${resp.status}` }, { status: 400 });
-        bytes = new Uint8Array(await resp.arrayBuffer());
-      } else {
-        return Response.json({ error: "module_url or module_bytes_base64 required" }, { status: 400 });
-      }
+      // Virtual filesystem with file command paths
+      const vfs = new VirtualFs();
+      const workdir = "/workspace";
+      vfs.write(workdir + "/github_output", "", false);
+      vfs.write(workdir + "/github_env", "", false);
+      wasiEnv["GITHUB_OUTPUT"] = workdir + "/github_output";
+      wasiEnv["GITHUB_ENV"] = workdir + "/github_env";
+      wasiEnv["GITHUB_WORKSPACE"] = workdir;
 
-      // Compile and run
-      const module = await WebAssembly.compile(bytes);
-      const runner = new WasiP1Runner(wasiEnv);
-      const instance = await WebAssembly.instantiate(module, runner.getImports());
-      runner.setMemory(instance.exports.memory as WebAssembly.Memory);
+      // Fetch module
+      if (!module_url) {
+        return Response.json({ error: "module_url required" }, { status: 400 });
+      }
+      const resp = await fetch(module_url);
+      if (!resp.ok) {
+        return Response.json(
+          { error: `fetch ${module_url}: ${resp.status}` },
+          { status: 400 },
+        );
+      }
+      const bytes = new Uint8Array(await resp.arrayBuffer());
+
+      // Run
+      const runner = new WasiP1Runner(wasiEnv, vfs, [workdir]);
+      const mod = await WebAssembly.compile(bytes);
+      const inst = await WebAssembly.instantiate(mod, runner.getImports());
+      runner.setMemory(inst.exports.memory as WebAssembly.Memory);
 
       let exitCode = 0;
       try {
-        (instance.exports._start as Function)();
+        (inst.exports._start as Function)();
       } catch (e) {
-        if (e instanceof WasiExit) {
-          exitCode = e.code;
-        } else {
-          return Response.json({ error: String(e) }, { status: 500 });
-        }
+        if (e instanceof WasiExit) exitCode = e.code;
+        else return Response.json({ error: String(e) }, { status: 500 });
       }
 
       return Response.json({
@@ -201,12 +263,15 @@ Deno.serve(async (req: Request) => {
         exit_code: exitCode,
         stdout: runner.getStdout(),
         stderr: runner.getStderr(),
-        outputs: runner.getOutputs(),
+        outputs: vfs.parseKeyValues(workdir + "/github_output"),
+        env_updates: vfs.parseKeyValues(workdir + "/github_env"),
       });
     } catch (e) {
       return Response.json({ error: String(e) }, { status: 500 });
     }
   }
 
-  return new Response("actrun wasi-worker\n\nPOST /run - execute WASM module\nGET /health - status\n");
+  return new Response(
+    "actrun wasi-worker\n\nPOST /run  {module_url, env?, inputs?}\nGET /health\n",
+  );
 });
