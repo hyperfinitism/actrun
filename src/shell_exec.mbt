@@ -609,5 +609,5 @@ fn shell_array_slice(arr : Array[String], start : Int) -> Array[String] {
 
 ///|
 fn shell_char_at(s : String, idx : Int) -> Char {
-  Char::from_int(s.unsafe_get(idx).to_int())
+  Int::unsafe_to_char(s.unsafe_get(idx).to_int())
 }

@@ -93,7 +93,7 @@ fn to_upper(s : String) -> String {
   let buf = StringBuilder::new()
   for ch in s {
     if ch >= 'a' && ch <= 'z' {
-      buf.write_char(Char::from_int(ch.to_int() - 32))
+      buf.write_char(Int::unsafe_to_char(ch.to_int() - 32))
     } else {
       buf.write_char(ch)
     }

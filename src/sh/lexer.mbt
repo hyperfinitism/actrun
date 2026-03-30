@@ -418,8 +418,12 @@ pub impl Show for LexError with output(self, logger) {
       logger.write_string("Unterminated string at \{line}:\{col}")
     UnexpectedChar(c, line, col) =>
       logger.write_string("Unexpected character '\{c}' at \{line}:\{col}")
-    InvalidEscape(c, line, col) =>
-      logger.write_string("Invalid escape '\\{c}' at \{line}:\{col}")
+    InvalidEscape(c, line, col) => {
+      let escaped = c.to_string()
+      logger.write_string("Invalid escape '\\")
+      logger.write_string(escaped)
+      logger.write_string("' at \{line}:\{col}")
+    }
   }
 }
 
