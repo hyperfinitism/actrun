@@ -541,20 +541,32 @@ ACTRUN_NIX=false actrun workflow run .github/workflows/ci.yml
 
 ## Performance
 
-Benchmark on Apple Silicon (M-series), 2 jobs / 7 steps with file I/O:
+Benchmark on Apple Silicon (M-series). All nix measurements use warm nix store cache.
+
+### Workspace modes (2 jobs, 7 steps, file I/O)
 
 | Mode | Run 1 | Run 2 | Run 3 |
 |------|------:|------:|------:|
-| `local` | 0.331s | 0.292s | 0.329s |
-| `local + nix-packages` | 5.456s | 4.584s | 4.158s |
-| `worktree` | 0.680s | 0.642s | 0.505s |
-| `worktree + nix-packages` | 4.390s | 4.318s | 4.258s |
-| `tmp` | 0.817s | 0.734s | 0.644s |
-| `tmp + nix-packages` | 4.366s | 4.302s | 4.300s |
+| `local` | 0.277s | 0.420s | 0.265s |
+| `local + nix-packages` | 4.262s | 3.813s | 3.831s |
+| `worktree` | 0.260s | 0.258s | 0.256s |
+| `worktree + nix-packages` | 3.883s | 3.814s | 3.919s |
+| `tmp` | 0.631s | 0.599s | 0.586s |
+| `tmp + nix-packages` | 4.263s | 4.198s | 4.222s |
 
-- **local** is the fastest (~0.3s) since it runs in-place with no workspace setup
-- **worktree / tmp** add ~0.3-0.5s overhead for git worktree creation or clone
-- **nix-packages** adds ~4s per run for `nix develop` shell initialization (first run may take longer to fetch packages)
+### Container runtime (1 job, 4 steps, alpine:3.20)
+
+| Mode | Run 1 | Run 2 | Run 3 |
+|------|------:|------:|------:|
+| `local` (no container) | 0.225s | 0.176s | 0.202s |
+| `apple-container` | 3.454s | 3.447s | 3.315s |
+
+### Summary
+
+- **local / worktree** are the fastest (~0.2-0.3s) — ideal for iterative development
+- **tmp** adds ~0.3s for `git clone`
+- **nix-packages** adds ~4s per run for `nix develop` shell startup (warm cache). First run may take longer to fetch packages from the nix store
+- **apple-container** adds ~3s for container lifecycle (create, start, exec, stop) per step group
 
 ```bash
 # Try it yourself
