@@ -539,6 +539,28 @@ ACTRUN_NIX=false actrun workflow run .github/workflows/ci.yml
 - Shell support: `bash`, `sh`, `pwsh`, custom templates (`{0}`)
 - `step.continue-on-error`, `steps.*.outcome` / `steps.*.conclusion`
 
+## Performance
+
+Benchmark on Apple Silicon (M-series), 2 jobs / 7 steps with file I/O:
+
+| Mode | Run 1 | Run 2 | Run 3 |
+|------|------:|------:|------:|
+| `local` | 0.331s | 0.292s | 0.329s |
+| `local + nix-packages` | 5.456s | 4.584s | 4.158s |
+| `worktree` | 0.680s | 0.642s | 0.505s |
+| `worktree + nix-packages` | 4.390s | 4.318s | 4.258s |
+| `tmp` | 0.817s | 0.734s | 0.644s |
+| `tmp + nix-packages` | 4.366s | 4.302s | 4.300s |
+
+- **local** is the fastest (~0.3s) since it runs in-place with no workspace setup
+- **worktree / tmp** add ~0.3-0.5s overhead for git worktree creation or clone
+- **nix-packages** adds ~4s per run for `nix develop` shell initialization (first run may take longer to fetch packages)
+
+```bash
+# Try it yourself
+nix run github:mizchi/actrun -- workflow run .github/workflows/ci.yml
+```
+
 ## Development
 
 ```bash
