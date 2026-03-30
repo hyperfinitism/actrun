@@ -1,0 +1,34 @@
+name: ci-output-special-chars
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - id: emit
+        shell: bash
+        run: |
+          echo "simple=hello world" >> "$GITHUB_OUTPUT"
+          echo "with_quotes=it's a test" >> "$GITHUB_OUTPUT"
+          echo "with_dollar=price is \$100" >> "$GITHUB_OUTPUT"
+          echo "with_braces={key:val}" >> "$GITHUB_OUTPUT"
+          echo "with_equals=a=b=c" >> "$GITHUB_OUTPUT"
+      - id: check_simple
+        env:
+          VAL: ${{ steps.emit.outputs.simple }}
+        run: printf '%s' "$VAL"
+      - id: check_quotes
+        env:
+          VAL: ${{ steps.emit.outputs.with_quotes }}
+        run: printf '%s' "$VAL"
+      - id: check_dollar
+        env:
+          VAL: ${{ steps.emit.outputs.with_dollar }}
+        run: printf '%s' "$VAL"
+      - id: check_braces
+        env:
+          VAL: ${{ steps.emit.outputs.with_braces }}
+        run: printf '%s' "$VAL"
+      - id: check_equals
+        env:
+          VAL: ${{ steps.emit.outputs.with_equals }}
+        run: printf '%s' "$VAL"

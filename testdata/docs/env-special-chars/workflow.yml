@@ -1,0 +1,20 @@
+name: ci-env-special-chars
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - id: set
+        shell: bash
+        run: |
+          echo "SIMPLE=hello world" >> "$GITHUB_ENV"
+          {
+            echo "MULTI<<GHEOF"
+            echo "line 1"
+            echo "line 2 with 'quotes'"
+            echo "GHEOF"
+          } >> "$GITHUB_ENV"
+      - id: read_simple
+        run: printf '%s' "$SIMPLE"
+      - id: read_multi
+        run: printf '%s' "$MULTI"

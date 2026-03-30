@@ -2404,3 +2404,88 @@ async test "compat docs: GITHUB_ENV set inside composite action is visible to su
   inspect(task.status, content="success")
   inspect(task.stdout, content="from-composite")
 }
+
+///|
+#cfg(target="native")
+async test "compat docs: step outputs preserve special characters" {
+  let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(
+    "output-special-chars",
+  )
+  let report = execute_lowered_native(
+    lower_push_workflow(workflow),
+    workspace_root=workspace,
+    push_event=compat_push_event_fixture(fixture),
+  )
+
+  inspect(fixture.id, content="docs-output-special-chars")
+  inspect(report.ok, content="true")
+  inspect(
+    compat_expect_task_report(report, "test/check_simple").stdout,
+    content="hello world",
+  )
+  inspect(
+    compat_expect_task_report(report, "test/check_quotes").stdout,
+    content="it's a test",
+  )
+  inspect(
+    compat_expect_task_report(report, "test/check_dollar").stdout,
+    content="price is $100",
+  )
+  inspect(
+    compat_expect_task_report(report, "test/check_braces").stdout,
+    content="{key:val}",
+  )
+  inspect(
+    compat_expect_task_report(report, "test/check_equals").stdout,
+    content="a=b=c",
+  )
+}
+
+///|
+#cfg(target="native")
+async test "compat docs: heredoc output preserves special characters" {
+  let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(
+    "output-heredoc-special",
+  )
+  let report = execute_lowered_native(
+    lower_push_workflow(workflow),
+    workspace_root=workspace,
+    push_event=compat_push_event_fixture(fixture),
+  )
+  let task = compat_expect_task_report(report, "test/check")
+
+  inspect(fixture.id, content="docs-output-heredoc-special")
+  inspect(report.ok, content="true")
+  inspect(task.status, content="success")
+  inspect(
+    task.stdout,
+    content=(
+      #|line1
+      #|line2 with special
+    ),
+  )
+}
+
+///|
+#cfg(target="native")
+async test "compat docs: GITHUB_ENV with special characters" {
+  let (fixture, workflow, workspace) = compat_prepare_docs_fixture_auto(
+    "env-special-chars",
+  )
+  let report = execute_lowered_native(
+    lower_push_workflow(workflow),
+    workspace_root=workspace,
+    push_event=compat_push_event_fixture(fixture),
+  )
+
+  inspect(fixture.id, content="docs-env-special-chars")
+  inspect(report.ok, content="true")
+  inspect(
+    compat_expect_task_report(report, "test/read_simple").stdout,
+    content="hello world",
+  )
+  inspect(
+    compat_expect_task_report(report, "test/read_multi").stdout,
+    content="line 1\nline 2 with 'quotes'",
+  )
+}

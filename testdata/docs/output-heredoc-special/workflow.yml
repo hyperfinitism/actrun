@@ -1,0 +1,19 @@
+name: ci-output-heredoc-special
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - id: emit
+        shell: bash
+        run: |
+          {
+            echo "body<<GHEOF"
+            echo "line1"
+            echo "line2 with special"
+            echo "GHEOF"
+          } >> "$GITHUB_OUTPUT"
+      - id: check
+        env:
+          VAL: ${{ steps.emit.outputs.body }}
+        run: printf '%s' "$VAL"

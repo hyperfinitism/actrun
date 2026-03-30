@@ -1,0 +1,7 @@
+id=docs-output-heredoc-special
+source=docs
+mode=supported
+kind=run
+url=https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions
+added_at=2026-03-30
+notes=multiline output via heredoc preserves special characters

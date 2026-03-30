@@ -1,0 +1,7 @@
+id=docs-env-special-chars
+source=docs
+mode=supported
+kind=run
+url=https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions
+added_at=2026-03-30
+notes=GITHUB_ENV with special characters preserved in downstream steps
