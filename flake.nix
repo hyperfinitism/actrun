@@ -23,44 +23,27 @@
 
       flake = {
         overlays.default = _final: prev: {
-          actrun = prev.callPackage (
-            { moonPlatform, ... }:
-            moonPlatform.buildMoonPackage {
-              src = ./.;
-              moonModJson = ./moon.mod.json;
-              moonRegistryIndex = inputs.moon-registry;
-
-              doCheck = false;
-              propagatedBuildInputs = [ prev.git ];
-              nativeBuildInputs = prev.lib.optionals prev.stdenv.isLinux [ prev.autoPatchelfHook ];
-            }
-          ) { };
+          actrun = prev.callPackage ./package.nix {
+            moonRegistryIndex = inputs.moon-registry;
+          };
         };
       };
 
       perSystem =
-        { pkgs, system, ... }:
+        { system, ... }:
         let
-          moonPkgs = import inputs.nixpkgs {
+          pkgs = import inputs.nixpkgs {
             inherit system;
             overlays = [ inputs.moonbit-overlay.overlays.default ];
             config.allowBroken = true;
           };
 
-          actrun = moonPkgs.moonPlatform.buildMoonPackage {
-            src = ./.;
-            moonModJson = ./moon.mod.json;
+          actrun = pkgs.callPackage ./package.nix {
             moonRegistryIndex = inputs.moon-registry;
-
-            doCheck = false;
-            propagatedBuildInputs = [ moonPkgs.git ];
-            nativeBuildInputs = moonPkgs.lib.optionals moonPkgs.stdenv.isLinux [
-              moonPkgs.autoPatchelfHook
-            ];
           };
 
-          moonHome = moonPkgs.moonPlatform.bundleWithRegistry {
-            cachedRegistry = moonPkgs.moonPlatform.buildCachedRegistry {
+          moonHome = pkgs.moonPlatform.bundleWithRegistry {
+            cachedRegistry = pkgs.moonPlatform.buildCachedRegistry {
               moonModJson = ./moon.mod.json;
               registryIndexSrc = inputs.moon-registry;
             };
@@ -83,13 +66,13 @@
             };
           };
 
-          devShells.default = moonPkgs.mkShellNoCC {
+          devShells.default = pkgs.mkShellNoCC {
             packages = [
               moonHome
-              moonPkgs.git
-              moonPkgs.just
-              moonPkgs.pnpm
-              moonPkgs.nodejs
+              pkgs.git
+              pkgs.just
+              pkgs.pnpm
+              pkgs.nodejs
             ];
             env.MOON_HOME = "${moonHome}";
           };
