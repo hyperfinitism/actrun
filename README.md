@@ -2,6 +2,8 @@
 
 A local GitHub Actions runner built with [MoonBit](https://docs.moonbitlang.com). Run and debug GitHub Actions workflows locally with a `gh`-compatible CLI.
 
+actrun keeps its release contract as close as possible to existing GitHub Actions semantics. Workflow YAML and action metadata stay on a GitHub-compatible surface, while WASM support is treated as a self-hosted runner optimization. See [docs/public-api.md](docs/public-api.md) for the contract boundary and [ADR 0001](docs/adr/0001-public-api-boundary.md) for the rationale.
+
 ## Install
 
 ```bash
@@ -385,7 +387,14 @@ ACTRUN_CONTAINER_RUNTIME=podman actrun workflow run ci.yml
 - GitHub repo `docker` actions with `pre-entrypoint`/`entrypoint`/`post-entrypoint` lifecycle
 - Composite actions (local and remote)
 - `docker://image` direct execution
-- `wasm://name@version` module execution
+
+### Self-Hosted WASM Optimization
+
+- A self-hosted runner may prefer a sibling `*.wasm` file next to a standard `node*` action `runs.main`
+- The same action still runs on GitHub Actions through the normal JS fallback path
+- The runtime family is selected with `--wasm-runner` / `ACTRUN_WASM_RUNNER`
+
+Protocol extensions such as `wasm://...` and `runs-on: wasi` are experimental / internal and are not part of the release contract. See [docs/public-api.md](docs/public-api.md) for details.
 
 ## Local-Only Execution Flag
 
@@ -455,7 +464,6 @@ Secrets are automatically masked in stdout, stderr, logs, and run store. The `::
 | `ACTRUN_CACHE_ROOT` | Cache storage root |
 | `ACTRUN_GITHUB_ACTION_CACHE_ROOT` | Remote action cache root |
 | `ACTRUN_ACTION_REGISTRY_ROOT` | Custom registry root |
-| `ACTRUN_WASM_ACTION_ROOT` | Wasm action module root |
 | `ACTRUN_NIX` | Set to `false` to disable nix wrapping |
 
 `ACTRUN_WASM_RUNNER` を指定した場合、default bin は `wasmtime` / `deno` / `ACTRUN_NODE_BIN` (`v8`) に切り替わります。`ACTRUN_WASM_BIN` を併用すると、runner kind は固定したまま実行 binary だけ上書きできます。

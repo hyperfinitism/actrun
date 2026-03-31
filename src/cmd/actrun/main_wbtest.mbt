@@ -202,6 +202,11 @@ test "cli: usage does not advertise dump-context" {
 }
 
 ///|
+test "cli: usage does not advertise wasm-action-root" {
+  inspect(usage_text().contains("--wasm-action-root"), content="false")
+}
+
+///|
 test "cli: parse run view flags" {
   let result = parse_run_read_args([
     "actrun", "run", "view", "run-1", "--run-root", "/tmp/runs", "--json",

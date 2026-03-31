@@ -284,7 +284,6 @@ fn usage_text() -> String {
   "  --cache-root <path>          Cache storage root\n" +
   "  --github-action-cache-root <path>  GitHub Action cache root\n" +
   "  --registry-root <path>       Action registry root\n" +
-  "  --wasm-action-root <path>    Wasm action root\n" +
   "\n" +
   "Output flags:\n" +
   "  --json [fields]              Output in JSON format (optionally filter by comma-separated fields)\n" +
