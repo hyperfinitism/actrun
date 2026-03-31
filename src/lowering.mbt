@@ -2646,9 +2646,15 @@ fn lower_local_action(
           ),
           inner_step.if_condition,
           inner_step.continue_on_error,
-          merge_env(merge_env(outer_env, nested_env), action_context_env),
+          merge_env(
+            merge_env(
+              merge_env(outer_env, nested_env),
+              action_input_env({}, nested_with_values),
+            ),
+            action_context_env,
+          ),
           action,
-          with_values=inner_step.with_values,
+          with_values=nested_with_values,
         )
         local_previous_task_id = task_id
         inner_index += 1

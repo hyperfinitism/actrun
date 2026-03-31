@@ -3048,6 +3048,91 @@ async test "executor: local composite action supports nested uses" {
 
 ///|
 #cfg(target="native")
+async test "executor: local composite action can build and run nested wasm action" {
+  let workspace = prepare_workspace("executor-local-action-nested-wasm")
+  let tools_root = prepare_workspace("executor-local-action-nested-wasm-tools")
+  let wasm_log_path = tools_root + "/wasm.log"
+  let wasm_bin = test_support_prepare_fake_wasm_bin(tools_root, wasm_log_path)
+  let wasm_root = workspace + "/generated-wasm"
+  ensure_dir(workspace + "/.github")
+  ensure_dir(workspace + "/.github/actions")
+  ensure_dir(workspace + "/.github/actions/setup")
+  let action_src =
+    #|name: Setup
+    #|inputs:
+    #|  message:
+    #|    default: default-message
+    #|outputs:
+    #|  result:
+    #|    value: ${{ steps.module.outputs.result }}
+    #|runs:
+    #|  using: composite
+    #|  steps:
+    #|    - id: build
+    #|      run: |
+    #|        mkdir -p "$ACTRUN_WASM_ACTION_ROOT/std/generated/v1"
+    #|        cat > "$ACTRUN_WASM_ACTION_ROOT/std/generated/v1/main.wasm" <<'EOF'
+    #|        #!/bin/sh
+    #|        set -eu
+    #|        printf '%s|%s' "${INPUT_MESSAGE:-}" "$GITHUB_WORKSPACE"
+    #|        printf 'result=from-composite-wasm\n' > "$GITHUB_OUTPUT"
+    #|        EOF
+    #|      shell: bash
+    #|    - id: module
+    #|      uses: wasm://std/generated@v1
+    #|      with:
+    #|        message: ${{ inputs.message }}
+  @xfs.write_string_to_file(
+    workspace + "/.github/actions/setup/action.yml",
+    action_src,
+  )
+
+  let workflow = new_workflow("ci", [
+    new_job(
+      "build",
+      [
+        new_uses_step("setup", "./.github/actions/setup", with_values={
+          "message": "from-composite",
+        }),
+        new_run_step(
+          "verify",
+          "printf '%s' '${{ steps.setup.outputs.result }}'",
+          shell=Some("bash"),
+        ),
+      ],
+      env={
+        "ACTRUN_WASM_BIN": wasm_bin,
+        "ACTRUN_WASM_ACTION_ROOT": wasm_root,
+        "ACTRUN_WASM_SKIP_VALIDATE": "true",
+      },
+      defaults=new_run_defaults(shell=Some("bash")),
+    ),
+  ])
+
+  let lowered = lower_push_workflow_in_workspace(workflow, workspace)
+  inspect(lowered.errors, content="[]")
+
+  let report = execute_lowered_native(lowered, workspace_root=workspace)
+
+  inspect(report.ok, content="true")
+  inspect(report.state, content="completed")
+  let module_report = expect_task_report(report, "build/setup__module")
+  inspect(module_report.status, content="success")
+  inspect(
+    module_report.stdout.contains("from-composite|/tmp/actrun-wasm-"),
+    content="true",
+  )
+  let verify = expect_task_report(report, "build/verify")
+  inspect(
+    verify.stdout.trim(chars=" \n\r\t").to_string(),
+    content="from-composite-wasm",
+  )
+  let wasm_log = @xfs.read_file_to_string(wasm_log_path)
+  assert_eq(wasm_log.contains("generated/v1/main.wasm"), true)
+}
+
+///|
+#cfg(target="native")
 async test "executor: github action_path context is available in local composite action" {
   let workspace = prepare_workspace("executor-local-action-github-action-path")
   ensure_dir(workspace + "/.github")

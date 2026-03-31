@@ -1113,6 +1113,58 @@ test "lowering: local composite action nested builtin uses becomes action task" 
 }
 
 ///|
+test "lowering: local composite action nested wasm uses receives input env" {
+  let workspace = prepare_local_action_workspace(
+    "lower-local-action-nested-wasm",
+  )
+  test_ensure_dir(workspace + "/.github")
+  test_ensure_dir(workspace + "/.github/actions")
+  test_ensure_dir(workspace + "/.github/actions/setup")
+  let action_src =
+    #|name: Setup
+    #|inputs:
+    #|  message:
+    #|    default: default-message
+    #|runs:
+    #|  using: composite
+    #|  steps:
+    #|    - id: build
+    #|      run: mkdir -p "$ACTRUN_WASM_ACTION_ROOT/std/generated/v1"
+    #|      shell: bash
+    #|    - id: module
+    #|      uses: wasm://std/generated@v1
+    #|      with:
+    #|        message: ${{ inputs.message }}
+    #|    - id: show
+    #|      run: printf '%s' ok
+  @xfs.write_string_to_file(
+    workspace + "/.github/actions/setup/action.yml",
+    action_src,
+  )
+
+  let workflow = new_workflow("ci", [
+    new_job("test", [
+      new_uses_step("setup", "./.github/actions/setup", with_values={
+        "message": "from-input",
+      }),
+    ]),
+  ])
+
+  let result = lower_push_workflow_in_workspace(workflow, workspace)
+
+  inspect(result.errors, content="[]")
+  let module_plan = expect_task_plan(result.plan, "test/setup__module")
+  inspect(module_plan.kind, content="action")
+  inspect(module_plan.action.unwrap().backend, content="wasm")
+  inspect(
+    module_plan.env.get("INPUT_MESSAGE").unwrap_or(""),
+    content="from-input",
+  )
+  let show = flow_task_by_id(result.ir, "test/setup__show")
+  inspect(show.needs, content="[\"test/setup__module\"]")
+}
+
+///|
 test "lowering: cached github repo composite action with subpath expands inner steps" {
   let workspace = prepare_local_action_workspace("lower-github-repo-action")
   let action_root = prepare_cached_github_action_root(
