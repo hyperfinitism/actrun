@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.29.0
+
+### Features
+
+- Add `src/sandbox/` — target-agnostic sandboxed step executor with `trait Fs` for dependency injection
+  - `MemFs`: in-memory filesystem implementation for browser / WASM targets
+  - `execute_shell_step`: runs shell steps entirely in-memory via injected `&Fs`
+  - `parse_key_values`: reads `GITHUB_OUTPUT` / `GITHUB_ENV` from any `&Fs`
+  - JS binding example: registers `plan` / `executeShellStep` / `executeWasmStep` on `globalThis._actrun_sandbox`
+  - Builds with `--target native/js/wasm/wasm-gc`
+- Add `remove` / `mkdir` / `is_dir` to `VirtualFs` for directory semantics
+
+### CI / Tooling
+
+- Update `actions/upload-artifact` and `actions/download-artifact` from v4 to v5 in release workflow (Node 20 deprecation fix)
+
 ## 0.28.1
 
 ### Bug Fixes
