@@ -81,6 +81,37 @@ fn split_lines(s : String) -> Array[String] {
 }
 
 ///|
+pub fn VirtualFs::remove(self : VirtualFs, path : String) -> Bool {
+  if self.files.get(path) is Some(_) {
+    self.files.remove(path)
+    true
+  } else {
+    false
+  }
+}
+
+///|
+pub fn VirtualFs::mkdir(self : VirtualFs, path : String) -> Bool {
+  let dir_key = if path.has_suffix("/") { path } else { path + "/" }
+  self.files[dir_key] = ""
+  true
+}
+
+///|
+pub fn VirtualFs::is_dir(self : VirtualFs, path : String) -> Bool {
+  let prefix = if path.has_suffix("/") { path } else { path + "/" }
+  if self.files.get(prefix) is Some(_) {
+    return true
+  }
+  for key, _ in self.files {
+    if key.has_prefix(prefix) {
+      return true
+    }
+  }
+  false
+}
+
+///|
 fn find_char_index(s : String, target : Char) -> Int {
   let code = target.to_int().to_uint16()
   let mut idx = 0

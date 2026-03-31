@@ -1,0 +1,48 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "mizchi/actrun/sandbox"
+
+import {
+  "mizchi/actrun",
+}
+
+// Values
+pub fn execute_shell_step(String, &Fs, env? : Map[String, String], workdir? : String) -> StepResult
+
+pub fn new_fs_shell_env(&Fs, Map[String, String], cwd? : String) -> @actrun.ShellEnv
+
+pub fn parse_key_values(&Fs, String) -> Map[String, String]
+
+pub fn step_result_to_json(StepResult) -> String
+
+// Errors
+
+// Types and methods
+pub struct MemFs {
+  files : Map[String, String]
+}
+pub fn MemFs::new() -> Self
+pub impl Fs for MemFs
+
+pub struct StepResult {
+  status : String
+  exit_code : Int
+  stdout : String
+  stderr : String
+  outputs : Map[String, String]
+  env_updates : Map[String, String]
+}
+pub impl Show for StepResult
+pub impl ToJson for StepResult
+
+// Type aliases
+
+// Traits
+pub(open) trait Fs {
+  write(Self, String, String, Bool) -> Unit
+  read(Self, String) -> String?
+  exists(Self, String) -> Bool
+  is_dir(Self, String) -> Bool
+  mkdir(Self, String) -> Bool
+  remove(Self, String) -> Bool
+}
+

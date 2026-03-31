@@ -1,0 +1,10 @@
+import {
+  "mizchi/actrun" @actrun,
+  "moonbitlang/core/json" @json,
+}
+
+warnings = "-0029"
+
+options(
+  targets: { "api_js.mbt": [ "js" ] },
+)
