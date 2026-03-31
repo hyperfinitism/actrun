@@ -38,7 +38,6 @@ pub struct WasmSandboxResult {
 }
 
 ///|
-#cfg(target="native")
 pub fn create_wasm_sandbox(step_id : String) -> WasmSandbox? {
   let safe_id = sanitize_path_component(step_id)
   let pid = @xsys.get_env_var("PPID").unwrap_or("0")
@@ -91,7 +90,6 @@ fn sanitize_path_component(s : String) -> String {
 ///|
 /// Build wasmtime arguments for sandboxed execution.
 /// Only the tempdir is mounted — no access to host filesystem.
-#cfg(target="native")
 pub fn build_sandboxed_wasmtime_args(
   sandbox : WasmSandbox,
   env : Map[String, String],
@@ -150,7 +148,6 @@ fn infer_wasm_runner_kind(wasm_bin : String) -> String {
 /// - "deno": use deno with wasi-runner.mjs shim
 /// - "v8": use node-compatible JS runtime with wasi-runner.mjs shim
 /// If runner_kind is empty, infer from the configured binary for backward compatibility.
-#cfg(target="native")
 fn resolve_wasm_runner_command_with_kind(
   runner_kind : String,
   wasm_bin : String,
@@ -180,7 +177,6 @@ fn resolve_wasm_runner_command_with_kind(
 
 ///|
 /// Backward-compatible wrapper that infers runner kind from the configured binary.
-#cfg(target="native")
 pub fn resolve_wasm_runner_command(
   wasm_bin : String,
   wasm_args : Array[String],
@@ -256,7 +252,6 @@ fn find_wasi_runner_shim(workspace_root : String) -> String {
 
 ///|
 /// Read results from the sandbox after WASM execution.
-#cfg(target="native")
 pub fn read_sandbox_results(sandbox : WasmSandbox) -> WasmSandboxResult {
   {
     env_updates: parse_env_updates(sandbox.env_path),
@@ -269,7 +264,6 @@ pub fn read_sandbox_results(sandbox : WasmSandbox) -> WasmSandboxResult {
 
 ///|
 /// Clean up the sandbox tempdir after use.
-#cfg(target="native")
 pub fn cleanup_wasm_sandbox(sandbox : WasmSandbox) -> Unit {
   ignore(exec_remove_tree(sandbox.tempdir))
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.1
+
+### Bug Fixes
+
+- Fix JS-target builds after the WASM sandbox changes so Docker / bundled releases can build again
+
 ## 0.28.0
 
 ### Features
