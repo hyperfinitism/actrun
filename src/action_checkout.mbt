@@ -93,6 +93,12 @@ fn exec_relative_path(root : String, path : String) -> String {
 }
 
 ///|
+#warnings("-deprecated")
+fn action_checkout_parse_int64(value : StringView) -> Int64 raise {
+  @strconv.parse_int64(value)
+}
+
+///|
 fn exec_copy_workspace_snapshot(
   workspace_root : String,
   destination : String,
@@ -167,7 +173,7 @@ fn parse_checkout_fetch_depth(value : String) -> Int? {
   if trimmed.length() == 0 {
     return Some(1)
   }
-  let parsed = @string.parse_int64(trimmed) catch { _ => return None }
+  let parsed = action_checkout_parse_int64(trimmed) catch { _ => return None }
   if parsed < 0 {
     None
   } else {

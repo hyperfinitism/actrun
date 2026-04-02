@@ -1099,14 +1099,16 @@ fn evaluate_string_function_expression(
 }
 
 ///|
+#warnings("-deprecated")
 fn try_parse_int64(s : String) -> Int64? {
-  let v = @string.parse_int64(s) catch { _ => return None }
+  let v = @strconv.parse_int64(s) catch { _ => return None }
   Some(v)
 }
 
 ///|
+#warnings("-deprecated")
 fn try_parse_double(s : String) -> Double? {
-  let v = @string.parse_double(s) catch { _ => return None }
+  let v = @strconv.parse_double(s) catch { _ => return None }
   Some(v)
 }
 

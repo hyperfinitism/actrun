@@ -69,6 +69,12 @@ pub fn shell_stderr(env : ShellEnv) -> String {
 }
 
 ///|
+#warnings("-deprecated")
+fn shell_parse_int(value : StringView) -> Int raise {
+  @strconv.parse_int(value)
+}
+
+///|
 fn exec_command_list(env : ShellEnv, list : @sh.CommandList) -> Int {
   let mut code = exec_pipeline(env, list.first)
   env.exit_code = code
@@ -274,7 +280,7 @@ fn exec_builtin(env : ShellEnv, name : String, args : Array[String]) -> Int {
     "exit" => {
       env.exit_called = true
       env.exit_code = if args.length() > 0 {
-        @string.parse_int(args[0]) catch {
+        shell_parse_int(args[0]) catch {
           _ => 1
         }
       } else {

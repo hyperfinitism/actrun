@@ -40,6 +40,12 @@ struct CliOptions {
 }
 
 ///|
+#warnings("-deprecated")
+fn main_parse_int64(value : StringView) -> Int64 raise {
+  @strconv.parse_int64(value)
+}
+
+///|
 struct CliParseResult {
   options : CliOptions?
   errors : Array[String]
@@ -1424,7 +1430,7 @@ fn ms_to_iso8601(ms : UInt64) -> String {
 fn run_number_from_id(run_id : String) -> Int {
   if run_id.has_prefix("run-") {
     let num_str = run_id[4:].to_string()
-    let parsed = @string.parse_int64(num_str) catch { _ => return 0 }
+    let parsed = main_parse_int64(num_str) catch { _ => return 0 }
     parsed.to_int()
   } else {
     0
@@ -1823,7 +1829,7 @@ fn read_cache_sequence(path : String) -> Int? {
       if trimmed.length() == 0 {
         return None
       }
-      let parsed = @string.parse_int64(trimmed) catch { _ => return None }
+      let parsed = main_parse_int64(trimmed) catch { _ => return None }
       Some(parsed.to_int())
     }
     None => None
@@ -3113,7 +3119,7 @@ async fn handle_serve_command(args : Array[String]) -> Int {
       continue
     }
     if arg == "--interval" && index + 1 < args.length() {
-      interval = @string.parse_int64(args[index + 1]).to_int() catch { _ => 30 }
+      interval = main_parse_int64(args[index + 1]).to_int() catch { _ => 30 }
       index += 2
       continue
     }
@@ -4444,7 +4450,7 @@ fn parse_run_read_args(args : Array[String]) -> RunReadParseResult {
       } else if arg == "--dir" {
         download_dir = value
       } else if arg == "--limit" || arg == "-L" {
-        let parsed = @string.parse_int64(value) catch { _ => 0L }
+        let parsed = main_parse_int64(value) catch { _ => 0L }
         limit = parsed.to_int()
       } else if arg == "--status" || arg == "-s" {
         status_filter = value
@@ -4671,7 +4677,7 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
       } else if arg == "--key" {
         key_filter = value
       } else if arg == "--max-age" {
-        max_age_days = try @string.parse_int64(value).to_int() catch {
+        max_age_days = try main_parse_int64(value).to_int() catch {
           _ => {
             errors.push("--max-age must be a number")
             0
@@ -4680,7 +4686,7 @@ fn parse_cache_read_args(args : Array[String]) -> CacheReadParseResult {
           v => v
         }
       } else if arg == "--limit" || arg == "-L" {
-        let parsed = @string.parse_int64(value) catch { _ => 0L }
+        let parsed = main_parse_int64(value) catch { _ => 0L }
         limit = parsed.to_int()
       } else {
         workspace_key_filter = value
@@ -6161,8 +6167,8 @@ fn format_elapsed(started_ms : String, finished_ms : String) -> String {
   if started_ms.length() == 0 || finished_ms.length() == 0 {
     return ""
   }
-  let s = @string.parse_int64(started_ms) catch { _ => return "" }
-  let f = @string.parse_int64(finished_ms) catch { _ => return "" }
+  let s = main_parse_int64(started_ms) catch { _ => return "" }
+  let f = main_parse_int64(finished_ms) catch { _ => return "" }
   let diff_ms = f - s
   if diff_ms >= 60000L {
     (diff_ms / 60000L).to_string() +
@@ -6556,8 +6562,8 @@ fn format_run_view_text(
   let started_text = run_json_number_text(payload, "started_at_ms")
   let finished_text = run_json_number_text(payload, "finished_at_ms")
   let elapsed = if started_text.length() > 0 && finished_text.length() > 0 {
-    let s = @string.parse_int64(started_text) catch { _ => 0L }
-    let f = @string.parse_int64(finished_text) catch { _ => 0L }
+    let s = main_parse_int64(started_text) catch { _ => 0L }
+    let f = main_parse_int64(finished_text) catch { _ => 0L }
     let diff_ms = f - s
     if diff_ms >= 60000L {
       (diff_ms / 60000L).to_string() + "m"
@@ -7187,7 +7193,7 @@ async fn handle_run_watch_command(options : RunReadOptions) -> Int {
     if run_state_is_terminal(state) {
       let exit_code_text = run_json_number_text(payload, "exit_code")
       let exit_code = if exit_code_text.length() > 0 {
-        let parsed = @string.parse_int64(exit_code_text) catch {
+        let parsed = main_parse_int64(exit_code_text) catch {
           _ => return run_state_exit_code(state)
         }
         parsed.to_int()

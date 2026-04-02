@@ -585,6 +585,12 @@ fn yaml_as_optional_bool(
 }
 
 ///|
+#warnings("-deprecated")
+fn parser_parse_int64(value : StringView) -> Int64 raise {
+  @strconv.parse_int64(value)
+}
+
+///|
 fn yaml_as_optional_int(
   value : YamlValue?,
   errors : Array[String],
@@ -596,7 +602,7 @@ fn yaml_as_optional_int(
       if trimmed.length() == 0 {
         return None
       }
-      let parsed = @string.parse_int64(trimmed) catch {
+      let parsed = parser_parse_int64(trimmed) catch {
         _ => {
           errors.push(ctx + " must be an integer")
           return None

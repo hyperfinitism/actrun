@@ -33,13 +33,19 @@ fn cache_store_path(workspace_root : String, key : String) -> String {
 }
 
 ///|
+#warnings("-deprecated")
+fn action_cache_parse_int64(value : StringView) -> Int64 raise {
+  @strconv.parse_int64(value)
+}
+
+///|
 fn read_exec_int(path : String) -> Int? {
   guard read_exec_text(path) is Some(content) else { return None }
   let trimmed = content.trim(chars=" \t\r\n").to_string()
   if trimmed.length() == 0 {
     return None
   }
-  let parsed = @string.parse_int64(trimmed) catch { _ => return None }
+  let parsed = action_cache_parse_int64(trimmed) catch { _ => return None }
   Some(parsed.to_int())
 }
 

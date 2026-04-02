@@ -6,7 +6,7 @@ import {
   "moonbitlang/core/env" @env,
   "moonbitlang/core/encoding/utf8" @utf8,
   "moonbitlang/core/json" @json,
-  "moonbitlang/core/string" @string,
+  "moonbitlang/core/strconv" @strconv,
   "moonbitlang/async/process" @process,
   "moonbitlang/core/bench",
   "moonbitlang/x/crypto" @crypto,
