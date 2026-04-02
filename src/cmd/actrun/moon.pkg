@@ -1,5 +1,6 @@
 import {
   "mizchi/actrun" @ar,
+  "mizchi/bitflow/workflow" @wf,
   "mizchi/actrun/lint" @lint,
   "mizchi/jq" @jq,
   "bobzhang/toml" @toml,
@@ -7,7 +8,7 @@ import {
   "moonbitlang/async/process" @process,
   "moonbitlang/core/env" @env,
   "moonbitlang/core/json" @json,
-  "moonbitlang/core/strconv" @strconv,
+  "moonbitlang/core/string" @string,
   "moonbitlang/x/fs" @xfs,
   "moonbitlang/x/sys" @xsys,
 }
