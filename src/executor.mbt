@@ -2430,6 +2430,7 @@ fn task_report_success(
     kind: plan.kind,
     status: "success",
     code: 0,
+    duration_ms: 0UL,
     shell: plan.shell,
     script: plan.script,
     cwd: resolve_task_cwd(workspace_root, plan.working_directory),
@@ -2450,6 +2451,7 @@ fn task_report_failure(
     kind: plan.kind,
     status: "failed",
     code: 1,
+    duration_ms: 0UL,
     shell: plan.shell,
     script: plan.script,
     cwd: resolve_task_cwd(workspace_root, plan.working_directory),
@@ -2485,6 +2487,7 @@ fn task_report_skipped(
     kind: plan.kind,
     status: "skipped",
     code: 0,
+    duration_ms: 0UL,
     shell: plan.shell,
     script: plan.script,
     cwd: resolve_task_cwd(workspace_root, plan.working_directory),
@@ -2505,6 +2508,7 @@ fn task_report_cancelled(
     kind: plan.kind,
     status: "cancelled",
     code: 1,
+    duration_ms: 0UL,
     shell: plan.shell,
     script: plan.script,
     cwd: resolve_task_cwd(workspace_root, plan.working_directory),
@@ -3092,6 +3096,7 @@ async fn execute_wasm_action_native(
         "failed"
       },
       code,
+      duration_ms: 0UL,
       shell: wasm_bin,
       script: abs_module_path,
       cwd,
@@ -3168,6 +3173,7 @@ async fn execute_node_action_native(
         "failed"
       },
       code,
+      duration_ms: 0UL,
       shell: plan.shell,
       script: plan.script,
       cwd,
@@ -3232,6 +3238,7 @@ async fn execute_docker_action_native(
           kind: plan.kind,
           status: "failed",
           code: build_code,
+          duration_ms: 0UL,
           shell: plan.shell,
           script: plan.script,
           cwd: action_root,
@@ -3302,6 +3309,7 @@ async fn execute_docker_action_native(
         "failed"
       },
       code,
+      duration_ms: 0UL,
       shell: plan.shell,
       script: plan.script,
       cwd: container_cwd,
@@ -3419,6 +3427,7 @@ async fn execute_job_container_node_action_native(
         "failed"
       },
       code,
+      duration_ms: 0UL,
       shell: plan.shell,
       script: plan.script,
       cwd: container_cwd,
@@ -3532,6 +3541,7 @@ async fn execute_job_container_run_native(
         "failed"
       },
       code,
+      duration_ms: 0UL,
       shell: cmd,
       script: resolved_script,
       cwd: container_cwd,
@@ -4122,6 +4132,7 @@ async fn execute_task_plan_native(
         "failed"
       },
       code,
+      duration_ms: 0UL,
       shell: cmd,
       script: resolved_script,
       cwd,
@@ -4318,6 +4329,7 @@ pub async fn execute_lowered_native(
               id: task.id,
               status: "cancelled",
               required: task.required,
+              duration_ms: 0UL,
               message,
             })
             if plan.kind == "barrier" {
@@ -4330,6 +4342,7 @@ pub async fn execute_lowered_native(
               id: task.id,
               status: "cancelled",
               required: task.required,
+              duration_ms: 0UL,
               message: "cancelled by matrix fail-fast",
             })
         }
@@ -4343,6 +4356,7 @@ pub async fn execute_lowered_native(
               id: task.id,
               status: "skipped",
               required: task.required,
+              duration_ms: 0UL,
               message,
             })
             if plan.kind == "barrier" {
@@ -4355,6 +4369,7 @@ pub async fn execute_lowered_native(
               id: task.id,
               status: "skipped",
               required: task.required,
+              duration_ms: 0UL,
               message: "job if condition evaluated to false",
             })
         }
@@ -4432,6 +4447,7 @@ pub async fn execute_lowered_native(
                 id: task.id,
                 status: "skipped",
                 required: task.required,
+                duration_ms: 0UL,
                 message,
               })
             }
@@ -4440,6 +4456,7 @@ pub async fn execute_lowered_native(
                 id: task.id,
                 status: "skipped",
                 required: task.required,
+                duration_ms: 0UL,
                 message: "step if condition evaluated to false",
               })
           }
@@ -4449,6 +4466,7 @@ pub async fn execute_lowered_native(
             id: task.id,
             status: "blocked",
             required: task.required,
+            duration_ms: 0UL,
             message: "blocked by dependency: " + blocked_deps.join(", "),
           })
           match plan_opt {
@@ -4487,6 +4505,7 @@ pub async fn execute_lowered_native(
                   id: task.id,
                   status: "skipped",
                   required: task.required,
+                  duration_ms: 0UL,
                   message: "action lifecycle was not started",
                 })
                 success[task.id] = true
@@ -4533,6 +4552,7 @@ pub async fn execute_lowered_native(
                         id: task.id,
                         status: "failed",
                         required: task.required,
+                        duration_ms: 0UL,
                         message,
                       })
                       success[task.id] = false
@@ -4549,6 +4569,7 @@ pub async fn execute_lowered_native(
                 }
                 started_job_tasks[plan.job_id] = true
               }
+              let task_started_at_ms = @env.now()
               let result = execute_task_plan_native(
                 ir.name,
                 plan,
@@ -4564,7 +4585,11 @@ pub async fn execute_lowered_native(
                 sandbox_config~,
                 allow_destructive_checkout_clean~,
               )
-              let report = result.report
+              let task_finished_at_ms = @env.now()
+              let report = {
+                ..result.report,
+                duration_ms: task_finished_at_ms - task_started_at_ms,
+              }
               reports.push(report)
               let github_ctx = github_context(
                 ir.name,
@@ -4640,6 +4665,7 @@ pub async fn execute_lowered_native(
                   id: task.id,
                   status: "success",
                   required: task.required,
+                  duration_ms: report.duration_ms,
                   message: report.stdout,
                 })
                 success[task.id] = true
@@ -4659,6 +4685,7 @@ pub async fn execute_lowered_native(
                   id: task.id,
                   status: "skipped",
                   required: task.required,
+                  duration_ms: report.duration_ms,
                   message,
                 })
                 success[task.id] = true
@@ -4678,6 +4705,7 @@ pub async fn execute_lowered_native(
                   id: task.id,
                   status: "cancelled",
                   required: task.required,
+                  duration_ms: report.duration_ms,
                   message,
                 })
                 success[task.id] = false
@@ -4700,6 +4728,7 @@ pub async fn execute_lowered_native(
                   id: task.id,
                   status: "failed",
                   required: task.required,
+                  duration_ms: report.duration_ms,
                   message,
                 })
                 success[task.id] = task_conclusion_allows_dependents(conclusion)
@@ -4727,6 +4756,7 @@ pub async fn execute_lowered_native(
                 id: task.id,
                 status: "failed",
                 required: task.required,
+                duration_ms: 0UL,
                 message: "missing task plan",
               })
               success[task.id] = false

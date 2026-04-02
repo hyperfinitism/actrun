@@ -665,6 +665,7 @@ async test "cli: persist run record stores task logs and summaries" {
   inspect(run_json.contains("\"steps\": [{"), content="true")
   inspect(run_json.contains("\"started_at_ms\": 1000"), content="true")
   inspect(run_json.contains("\"finished_at_ms\": 2000"), content="true")
+  inspect(run_json.contains("\"duration_ms\": "), content="true")
   inspect(
     run_json.contains("\"stdout_path\": \"tasks/build__record.stdout.log\""),
     content="true",
@@ -688,6 +689,7 @@ async test "cli: persist run record stores task logs and summaries" {
   let jobs_json = @xfs.read_file_to_string(run_root + "/run-1/jobs.json")
   inspect(jobs_json.contains("\"id\": \"build\""), content="true")
   inspect(jobs_json.contains("\"conclusion\": \"success\""), content="true")
+  inspect(jobs_json.contains("\"duration_ms\": "), content="true")
   let artifacts_json = @xfs.read_file_to_string(
     run_root + "/run-1/artifacts.json",
   )
@@ -853,6 +855,119 @@ async test "cli: persist run record stores task logs and summaries" {
   )
   inspect(pruned_list_text, content="")
   main_test_restore_env_var("ACTRUN_CACHE_ROOT", previous_cache_root)
+}
+
+///|
+#cfg(target="native")
+async test "cli: persist run record stores embedded test reports as artifacts" {
+  ensure_main_test_dir("_build")
+  ensure_main_test_dir("_build/test-main")
+  let workspace_rel = "_build/test-main/run-store-embedded-report-workspace"
+  let workspace = main_test_absolute_path(workspace_rel)
+  let run_root = "_build/test-main/run-store-embedded-report"
+  let artifact_root = "_build/actrun/artifacts"
+  remove_main_test_tree(workspace_rel)
+  remove_main_test_tree(run_root)
+  ensure_main_test_dir(workspace_rel)
+  remove_main_test_tree(
+    artifact_root + "/\{run_store_workspace_key(workspace)}",
+  )
+  let workflow_src =
+    #|name: ci
+    #|'on':
+    #|  push:
+    #|jobs:
+    #|  test:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - id: playwright
+    #|        run: |
+    #|          cat <<'EOF'
+    #|          {"config":{"projects":[{"name":"chromium"}]},"suites":[{"title":"auth.spec.ts","file":"tests/auth.spec.ts","specs":[{"title":"logs in","tests":[{"projectName":"chromium","status":"expected","results":[{"status":"passed","duration":100,"retry":0}]}]}]}]}
+    #|          EOF
+    #|      - id: vitest
+    #|        run: |
+    #|          cat <<'EOF'
+    #|          {"testResults":[{"name":"tests/math.test.ts","assertionResults":[{"fullName":"math > adds numbers","status":"passed","duration":5,"failureMessages":[]}]}]}
+    #|          EOF
+  let parsed = @ar.parse_workflow_yaml(workflow_src)
+  let workflow = match parsed.workflow {
+    Some(spec) => spec
+    None => abort(parsed.errors.join("\n"))
+  }
+  let lowered = @ar.lower_push_workflow_in_workspace(workflow, workspace)
+  if lowered.errors.length() > 0 {
+    abort(lowered.errors.join("\n"))
+  }
+  let report = @ar.execute_lowered_native(
+    lowered,
+    workspace_root=workspace,
+    push_event=Some(
+      @ar.new_push_event("main", ["README.md"], repository="mizchi/actrun"),
+    ),
+  )
+  let run_id = persist_run_record(
+    run_root,
+    {
+      run_id: "",
+      workflow_name: "ci",
+      workflow_path: ".github/workflows/ci.yml",
+      workspace_root: workspace,
+      workspace_mode: "worktree",
+      started_at_ms: 1000UL,
+      finished_at_ms: 2000UL,
+      event: "push",
+      state: report.state,
+      ok: report.ok,
+      exit_code: 0,
+      repository: "mizchi/actrun",
+      ref_name: "main",
+      before_sha: "",
+      after_sha: "",
+      changed_paths: ["README.md"],
+    },
+    report=Some(report),
+    plan=Some(lowered.plan),
+  ).unwrap_or("")
+
+  inspect(run_id, content="run-1")
+  let artifacts_json = @xfs.read_file_to_string(
+    run_root + "/run-1/artifacts.json",
+  )
+  inspect(artifacts_json.contains("\"name\": \"playwright-report\""), content="true")
+  inspect(artifacts_json.contains("\"name\": \"vitest-report\""), content="true")
+  inspect(
+    artifacts_json.contains("\"files\": [\"test__playwright.json\"]"),
+    content="true",
+  )
+  inspect(
+    artifacts_json.contains("\"files\": [\"test__vitest.json\"]"),
+    content="true",
+  )
+  inspect(
+    @xfs.read_file_to_string(
+      artifact_root + "/\{run_store_workspace_key(workspace)}/playwright-report/test__playwright.json",
+    ).contains("\"suites\":"),
+    content="true",
+  )
+  inspect(
+    @xfs.read_file_to_string(
+      artifact_root + "/\{run_store_workspace_key(workspace)}/vitest-report/test__vitest.json",
+    ).contains("\"testResults\":"),
+    content="true",
+  )
+  inspect(
+    @xfs.read_file_to_string(
+      run_root + "/run-1/artifacts/playwright-report/test__playwright.json",
+    ).contains("\"logs in\""),
+    content="true",
+  )
+  inspect(
+    @xfs.read_file_to_string(
+      run_root + "/run-1/artifacts/vitest-report/test__vitest.json",
+    ).contains("\"math > adds numbers\""),
+    content="true",
+  )
 }
 
 ///|
@@ -1110,7 +1225,13 @@ test "cli: job JSON schema has required fields" {
     needs: ["setup"],
     task_ids: ["build/test"],
     steps: [
-      { name: "test", number: 1, status: "completed", conclusion: "success" },
+      {
+        name: "test",
+        number: 1,
+        status: "completed",
+        conclusion: "success",
+        duration_ms: 12UL,
+      },
     ],
   })
   for
@@ -1119,6 +1240,7 @@ test "cli: job JSON schema has required fields" {
       Array[String]) {
     assert_true(json_has_field(job_json, field))
   }
+  assert_true(job_json.contains("\"duration_ms\": 12"))
 }
 
 ///|
@@ -1511,8 +1633,15 @@ test "gh-compat: job record includes name, conclusion, and steps" {
         number: 1,
         status: "completed",
         conclusion: "success",
+        duration_ms: 15UL,
       },
-      { name: "Test", number: 2, status: "completed", conclusion: "failure" },
+      {
+        name: "Test",
+        number: 2,
+        status: "completed",
+        conclusion: "failure",
+        duration_ms: 27UL,
+      },
     ],
   }
   let json_text = run_job_json(job)
@@ -1521,8 +1650,10 @@ test "gh-compat: job record includes name, conclusion, and steps" {
   inspect(json_text.contains("\"steps\": ["), content="true")
   inspect(json_text.contains("\"name\": \"Checkout\""), content="true")
   inspect(json_text.contains("\"number\": 1"), content="true")
+  inspect(json_text.contains("\"duration_ms\": 15"), content="true")
   inspect(json_text.contains("\"name\": \"Test\""), content="true")
   inspect(json_text.contains("\"number\": 2"), content="true")
+  inspect(json_text.contains("\"duration_ms\": 27"), content="true")
 }
 
 ///|

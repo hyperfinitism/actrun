@@ -156,6 +156,7 @@ struct RunJobStepRecord {
   number : Int
   status : String
   conclusion : String
+  duration_ms : UInt64
 }
 
 ///|
@@ -1206,6 +1207,15 @@ fn task_status_map(report : @ar.WorkflowRunReport) -> Map[String, String] {
 }
 
 ///|
+fn task_duration_map(report : @ar.WorkflowRunReport) -> Map[String, UInt64] {
+  let durations : Map[String, UInt64] = {}
+  for task in report.task_reports {
+    durations[task.id] = task.duration_ms
+  }
+  durations
+}
+
+///|
 fn derive_job_status(task_statuses : Array[String]) -> String {
   if task_statuses.length() == 0 {
     return "skipped"
@@ -1250,6 +1260,7 @@ fn collect_run_jobs(
   report : @ar.WorkflowRunReport,
 ) -> Array[RunJobRecord] {
   let task_statuses = task_status_map(report)
+  let task_durations = task_duration_map(report)
   let task_names : Map[String, String] = {}
   let by_job : Map[String, Array[String]] = {}
   let job_order : Array[String] = []
@@ -1276,6 +1287,7 @@ fn collect_run_jobs(
         number: i + 1,
         status: "completed",
         conclusion: task_conclusion_to_gh(task_status),
+        duration_ms: task_durations.get(task_id).unwrap_or(0UL),
       })
     }
     let conclusion = derive_job_status(statuses)
@@ -1318,6 +1330,57 @@ fn artifact_name_index(
 }
 
 ///|
+let managed_embedded_report_artifacts : Array[String] = [
+  "playwright-report",
+  "vitest-report",
+]
+
+///|
+fn embedded_test_report_artifact_name(text : String) -> String? {
+  let trimmed = text.trim(chars=" \t\r\n").to_string()
+  if trimmed.length() == 0 {
+    return None
+  }
+  let payload = @json.parse(trimmed) catch { _ => return None }
+  guard payload is Object(fields) else { return None }
+  if fields.get("suites") is Some(Array(_)) {
+    return Some("playwright-report")
+  }
+  if fields.get("testResults") is Some(Array(_)) {
+    return Some("vitest-report")
+  }
+  None
+}
+
+///|
+fn persist_embedded_test_report_artifacts(
+  workspace_root : String,
+  report : @ar.WorkflowRunReport,
+) -> Unit raise {
+  let store_root = artifact_store_root_for_run(workspace_root)
+  ensure_dir(store_root)
+  for artifact_name in managed_embedded_report_artifacts {
+    ignore(remove_tree(join_path(store_root, run_store_sanitize_id(artifact_name))))
+  }
+  for task in report.task_reports {
+    let artifact_name = match embedded_test_report_artifact_name(task.stdout) {
+      Some(name) => name
+      None => continue
+    }
+    let artifact_dir = join_path(
+      store_root,
+      run_store_sanitize_id(artifact_name),
+    )
+    ensure_dir(artifact_dir)
+    let file_name = task_file_stem(task.id) + ".json"
+    @xfs.write_string_to_file(
+      join_path(artifact_dir, file_name),
+      task.stdout.trim(chars=" \t\r\n").to_string() + "\n",
+    )
+  }
+}
+
+///|
 fn collect_run_artifacts(
   workspace_root : String,
   plan? : @ar.ExecutionPlan? = None,
@@ -1344,6 +1407,40 @@ fn collect_run_artifacts(
     })
   }
   artifacts
+}
+
+///|
+fn persist_run_artifact_files(
+  run_dir : String,
+  workspace_root : String,
+  artifacts : Array[RunArtifactRecord],
+) -> Unit raise {
+  if artifacts.length() == 0 {
+    return
+  }
+  let store_root = artifact_store_root_for_run(workspace_root)
+  let artifacts_dir = join_path(run_dir, "artifacts")
+  ensure_dir(artifacts_dir)
+  for artifact in artifacts {
+    let artifact_store_dir = join_path(
+      store_root,
+      run_store_sanitize_id(artifact.name),
+    )
+    if not(@xfs.path_exists(artifact_store_dir)) {
+      continue
+    }
+    let artifact_run_dir = join_path(
+      artifacts_dir,
+      run_store_sanitize_id(artifact.name),
+    )
+    ensure_dir(artifact_run_dir)
+    for relative_path in artifact.files {
+      let src = join_path(artifact_store_dir, relative_path)
+      let dst = join_path(artifact_run_dir, relative_path)
+      ensure_dir(parent_dir(dst))
+      @xfs.write_bytes_to_file(dst, @xfs.read_file_to_bytes(src))
+    }
+  }
 }
 
 ///|
@@ -1485,6 +1582,9 @@ fn run_job_step_json(step : RunJobStepRecord) -> String {
   ", " +
   "\"conclusion\": " +
   json_string(step.conclusion) +
+  ", " +
+  "\"duration_ms\": " +
+  json_uint64(step.duration_ms) +
   " }"
 }
 
@@ -1587,6 +1687,9 @@ fn run_step_json(step : @ar.WorkflowStepReport) -> String {
   "\"required\": " +
   (if step.required { "true" } else { "false" }) +
   ", " +
+  "\"duration_ms\": " +
+  json_uint64(step.duration_ms) +
+  ", " +
   "\"message\": " +
   json_string(step.message) +
   " }"
@@ -1618,6 +1721,9 @@ fn run_task_json(task : @ar.TaskRunReport, files : RunTaskFiles?) -> String {
   ", " +
   "\"code\": " +
   task.code.to_string() +
+  ", " +
+  "\"duration_ms\": " +
+  json_uint64(task.duration_ms) +
   ", " +
   "\"shell\": " +
   json_string(task.shell) +
@@ -1863,6 +1969,11 @@ fn persist_run_record(
 ) -> String? {
   try {
     let (run_id, run_dir) = next_run_slot(run_root)
+    match report {
+      Some(run_report) =>
+        persist_embedded_test_report_artifacts(record.workspace_root, run_report)
+      None => ()
+    }
     let task_files = match report {
       Some(run_report) => persist_task_files(run_dir, run_report)
       None => {}
@@ -1874,6 +1985,7 @@ fn persist_run_record(
     }
     let artifacts = collect_run_artifacts(record.workspace_root, plan~, report~)
     let caches = collect_run_caches(record.workspace_root)
+    persist_run_artifact_files(run_dir, record.workspace_root, artifacts)
     persist_run_layout_files(run_dir, jobs, artifacts, caches)
     @xfs.write_string_to_file(
       join_path(run_dir, "run.json"),

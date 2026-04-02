@@ -722,6 +722,7 @@ pub struct TaskRunReport {
   kind : String
   status : String
   code : Int
+  duration_ms : UInt64
   shell : String
   script : String
   cwd : String
@@ -735,6 +736,7 @@ pub struct WorkflowStepReport {
   id : String
   status : String
   required : Bool
+  duration_ms : UInt64
   message : String
 }
 
