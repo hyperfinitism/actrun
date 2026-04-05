@@ -28,7 +28,17 @@ import {
 } for "wbtest"
 
 options(
+  link: {
+    "js": {
+      "exports": [
+        "js_plan_workflow:planWorkflow",
+        "js_plan_result_to_json:planResultToJson",
+      ],
+      "format": "esm",
+    },
+  },
   targets: {
+    "js_plan_exports.mbt": [ "js" ],
     "action_ref_test.mbt": [ "native" ],
     "compat_act_test.mbt": [ "native" ],
     "compat_docs_test.mbt": [ "native" ],
